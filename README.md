@@ -2,7 +2,7 @@
 
 A personal assistant that lives in WhatsApp and **gets tasks done**: book flights, book trains and order
 food, all by chatting in plain English, Hindi or Hinglish. It's built on the official **Meta WhatsApp Cloud API**,
-with **Claude** as a tool-using agent and a **human-in-the-loop checkout**, so the AI can never spend money by itself.
+with a **pluggable LLM (Gemini, Groq or OpenRouter)** as a tool-using agent and a **human-in-the-loop checkout**, so the AI can never spend money by itself.
 
 ```
 You:    cheapest flight delhi to goa next friday evening
@@ -38,7 +38,7 @@ flowchart LR
     W -. background .-> I[Inbound processor<br/>dedupe wamid · per-user lock]
     I --> E{Engine}
     E -- "bk:confirm / bk:cancel<br/>help · reset" --> B[Booking service<br/>deterministic]
-    E -- free text / list taps --> A[Agent loop<br/>Claude + tools]
+    E -- free text / list taps --> A[Agent loop<br/>LLM + tools]
     A --> T[Tools] --> P[Providers<br/>flights · trains · food]
     T -- draft only --> B
     B -- payment link --> PAY[Checkout page /pay/token]
@@ -47,10 +47,10 @@ flowchart LR
     ADM[/api/* traces · bookings/] --> DB
 ```
 
-**Agent loop** (`app/agent/agent.py`): user text → Claude picks tools → results go back to it → repeat (max 8 steps)
+**Agent loop** (`app/agent/agent.py`): user text → the LLM picks tools → results go back to it → repeat (max 8 steps)
 → final reply. Search tools also queue **native WhatsApp list messages**, so the user taps instead of typing.
 Tool errors (unknown city, missing address, spend limit) go back to the model as `is_error` results, and it
-recovers by asking the user. Static tool definitions use **prompt caching**.
+recovers by asking the user.
 
 ### Safety: the LLM can't spend money
 1. `prepare_booking` only creates a **draft**. It sends Confirm/Cancel buttons and says so to the model.
@@ -76,7 +76,7 @@ Every tool call is stored in `tool_traces` (input, output, error, latency):
 | Part | Status | How to go live |
 |---|---|---|
 | WhatsApp messaging, lists, buttons, CTA links | **Real** (Meta Cloud API) | Already live with your test number |
-| AI agent, tool use, memory | **Real** (Claude) | — |
+| AI agent, tool use, memory | **Real** (Gemini / Groq / OpenRouter) | Switch with `LLM_PROVIDER` |
 | Flight inventory | Mock, deterministic | Implement `FlightProvider` with Amadeus / Duffel / TBO |
 | Train inventory | Mock | IRCTC has no public API, so this needs an authorised agent (B2B) API |
 | Food | Mock | ONDC buyer app or a restaurant partner API |
@@ -90,7 +90,7 @@ The agent, tools and checkout flow don't change.
 ```bash
 python -m venv .venv && .venv\Scripts\activate      # Windows
 pip install -r requirements-dev.txt
-copy .env.example .env                                # add ANTHROPIC_API_KEY (+ Meta creds for live)
+copy .env.example .env                                # set LLM_PROVIDER + LLM_API_KEY (+ Meta creds for live)
 uvicorn app.main:app --reload
 ```
 
@@ -109,10 +109,22 @@ python scripts/simulate.py --name "Dhruv"
 flows end to end through signed webhooks, the checkout, the spend limit, ownership, stale drafts, tool-error recovery
 and memory trimming.
 
+## Switching LLM provider
+All three providers expose an OpenAI-compatible API, so a single adapter (`app/agent/llm.py`) covers them. Only `.env` changes:
+
+| `LLM_PROVIDER` | Get a key | Default `LLM_MODEL` |
+|---|---|---|
+| `gemini` | aistudio.google.com/apikey (free tier) | `gemini-2.5-flash` |
+| `groq` | console.groq.com/keys (free tier, very fast) | `llama-3.3-70b-versatile` |
+| `openrouter` | openrouter.ai/keys (any model) | `google/gemini-2.5-flash` |
+
+Set `LLM_MODEL` to use any other tool-calling model from that provider. Set `LLM_BASE_URL` to point at another
+OpenAI-compatible endpoint (for example a local Ollama).
+
 ## Project layout
 ```
 app/
-  agent/    agent.py (LLM loop + memory) · tools.py (tool schemas + impls) · engine.py (routing)
+  agent/    agent.py (loop + memory) · llm.py (Gemini/Groq/OpenRouter adapter) · tools.py (tool schemas + impls) · engine.py (routing)
   providers/ base.py (interfaces) · mock.py (flights, trains, food)
   services/ bookings.py (lifecycle, guardrails) · messaging.py (24h window, persistence) · inbound.py
   api/      webhook.py · pay.py (checkout) · admin.py (traces, bookings)

@@ -24,8 +24,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./agent.db"
 
     # --- Agent
-    anthropic_api_key: str = ""
-    llm_model: str = "claude-sonnet-5-5"
+    llm_provider: str = "gemini"  # gemini | groq | openrouter
+    llm_api_key: str = ""
+    llm_model: str = ""  # empty => provider default (see app/agent/llm.py)
+    llm_base_url: str = ""  # optional override of the provider's OpenAI-compatible endpoint
     llm_enabled: bool = True
     agent_max_steps: int = 8  # max tool-use iterations per user message
     history_messages: int = 30  # short-term conversation memory kept per user
@@ -49,7 +51,7 @@ class Settings(BaseSettings):
 
     @property
     def llm_active(self) -> bool:
-        return self.llm_enabled and bool(self.anthropic_api_key)
+        return self.llm_enabled and bool(self.llm_api_key)
 
 
 @lru_cache

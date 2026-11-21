@@ -1,0 +1,61 @@
+"""The OpenAI-compatible adapter (Gemini / Groq / OpenRouter), tested against a fake HTTP transport."""
+
+import json
+
+import httpx
+import pytest
+
+from app.agent.llm import PROVIDERS, LLMError, OpenAICompatibleLLM, to_openai_messages, to_openai_tools
+from app.agent.tools import TOOLS
+
+
+def test_tools_schema_is_cleaned():
+    tools = to_openai_tools(TOOLS)
+    assert {t["function"]["name"] for t in tools} >= {"search_flights", "prepare_booking"}
+    assert '"default"' not in json.dumps(tools)  # Gemini rejects `default`
+
+
+def test_history_conversion_orders_tool_results_correctly():
+    msgs = to_openai_messages("SYS", [
+        {"role": "user", "content": "flight to goa"},
+        {"role": "assistant", "content": [{"type": "text", "text": "Searching"},
+                                          {"type": "tool_use", "id": "c1", "name": "search_flights", "input": {"a": 1}}]},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "{}", "is_error": True},
+                                     {"type": "text", "text": "[system note: x]"}]},
+    ])  # fmt: skip
+    assert [m["role"] for m in msgs] == ["system", "user", "assistant", "tool", "user"]
+    assert msgs[2]["tool_calls"][0]["function"] == {"name": "search_flights", "arguments": '{"a": 1}'}
+    assert msgs[3] == {"role": "tool", "tool_call_id": "c1", "content": "ERROR: {}"}
+
+
+@pytest.mark.parametrize("provider", list(PROVIDERS))
+async def test_each_provider_round_trip(provider):
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["url"], seen["body"] = str(req.url), json.loads(req.content)
+        # Gemini-style quirk: finish_reason "stop" with tool calls and no id
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {
+            "content": None,
+            "tool_calls": [{"type": "function", "function": {"name": "get_menu", "arguments": '{"restaurant_id":"R1"}'}}],
+        }}]})  # fmt: skip
+
+    llm = OpenAICompatibleLLM(provider, http=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    out = await llm.create(system="S", tools=TOOLS, messages=[{"role": "user", "content": "menu"}])
+    assert seen["url"] == PROVIDERS[provider]["base_url"] + "/chat/completions"
+    assert seen["body"]["model"] == PROVIDERS[provider]["model"]
+    assert out["stop_reason"] == "tool_use"
+    [call] = out["content"]
+    assert call["name"] == "get_menu" and call["input"] == {"restaurant_id": "R1"} and call["id"]
+
+
+async def test_non_retryable_error_raises():
+    llm = OpenAICompatibleLLM("groq", http=httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda r: httpx.Response(401, json={"error": "bad key"}))))  # fmt: skip
+    with pytest.raises(LLMError, match="401"):
+        await llm.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])
+
+
+def test_unknown_provider_rejected():
+    with pytest.raises(ValueError):
+        OpenAICompatibleLLM("anthropic")

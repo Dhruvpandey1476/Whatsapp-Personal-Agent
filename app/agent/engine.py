@@ -66,7 +66,7 @@ async def handle_message(db: AsyncSession, contact: Contact, msg: InboundMessage
         return
 
     if not settings.llm_active:
-        await say(db, contact, text_message("⚠️ The AI agent isn't configured yet (ANTHROPIC_API_KEY missing)."))
+        await say(db, contact, text_message("⚠️ The AI agent isn't configured yet (LLM_API_KEY missing)."))
         return
 
     try:

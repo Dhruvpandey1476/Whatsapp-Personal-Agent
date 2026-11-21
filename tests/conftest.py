@@ -15,7 +15,7 @@ os.environ.update(
     WHATSAPP_VERIFY_TOKEN="verify-me",
     API_KEY="test-key",
     LLM_ENABLED="true",
-    ANTHROPIC_API_KEY="test",
+    LLM_API_KEY="test",
     PUBLIC_BASE_URL="http://test",
     ENVIRONMENT="test",
 )

@@ -1,4 +1,4 @@
-"""The agent loop: Claude + tools, with per-user memory.
+"""The agent loop: LLM (Gemini / Groq / OpenRouter) + tools, with per-user memory.
 
     user text -> [LLM -> tool calls -> tool results]* -> final text (+ queued WhatsApp lists/buttons)
 
@@ -11,6 +11,7 @@ import time
 from datetime import datetime
 from typing import Any, Protocol
 
+from app.agent.llm import OpenAICompatibleLLM
 from app.agent.tools import REGISTRY, TOOLS, ToolContext, ToolError
 from app.config import settings
 from app.models import ToolTrace
@@ -46,34 +47,13 @@ class LLM(Protocol):
         ...
 
 
-class AnthropicLLM:
-    def __init__(self) -> None:
-        import anthropic
-
-        self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key, max_retries=2, timeout=60)
-        # Cache the (static) tool definitions: cheaper and faster on every turn.
-        self.tools = [*TOOLS[:-1], {**TOOLS[-1], "cache_control": {"type": "ephemeral"}}]
-
-    async def create(self, *, system: str, tools: list[dict], messages: list[dict]) -> dict:
-        resp = await self.client.messages.create(
-            model=settings.llm_model, max_tokens=1024, system=system, tools=self.tools, messages=messages
-        )
-        blocks: list[dict] = []
-        for b in resp.content:
-            if b.type == "text":
-                blocks.append({"type": "text", "text": b.text})
-            elif b.type == "tool_use":
-                blocks.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
-        return {"content": blocks, "stop_reason": resp.stop_reason}
-
-
 _llm: LLM | None = None
 
 
 def get_llm() -> LLM:
     global _llm
     if _llm is None:
-        _llm = AnthropicLLM()
+        _llm = OpenAICompatibleLLM()
     return _llm
 
 

@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
         "starting %s | whatsapp=%s | agent=%s | checkout=%s",
         settings.app_name,
         "MOCK" if settings.mock_whatsapp else "LIVE",
-        settings.llm_model if settings.llm_active else "DISABLED (no ANTHROPIC_API_KEY)",
+        f"{settings.llm_provider}:{settings.llm_model or 'default'}" if settings.llm_active else "DISABLED (no LLM_API_KEY)",
         settings.public_base_url,
     )
     yield
@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    description="Personal AI agent on WhatsApp: books flights and trains and orders food via tool-using Claude.",
+    description="Personal AI agent on WhatsApp: books flights and trains and orders food via a tool-using LLM.",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -42,5 +42,5 @@ async def health() -> dict:
     return {
         "status": "ok",
         "whatsapp_mode": "mock" if settings.mock_whatsapp else "live",
-        "agent": settings.llm_model if settings.llm_active else "disabled",
+        "agent": settings.llm_provider if settings.llm_active else "disabled",
     }
