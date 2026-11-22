@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Contact
 from app.providers import mock
-from app.services import bookings
+from app.services import bookings, web
 from app.whatsapp.client import buttons_message, list_message
 
 PROFILE_FIELDS = {"full_name", "age", "gender", "email", "home_city", "delivery_address", "preferences"}
@@ -43,12 +43,13 @@ def _fmt_dur(m: int) -> str:
 TOOLS: list[dict] = [
     {
         "name": "search_flights",
-        "description": "Search one-way domestic flights in India. Results are also shown to the user as a "
+        "description": "Search one-way flights: domestic India and international (Dubai, Singapore, London, "
+        "New York, Chicago, Toronto, Paris, Tokyo, Sydney, Bangkok...). Results are also shown to the user as a "
         "tappable WhatsApp list, so in your reply just summarise the best 2-3 options briefly.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "origin": {"type": "string", "description": "City name or IATA code, e.g. Delhi or DEL"},
+                "origin": {"type": "string", "description": "City name or IATA code, e.g. Delhi, DEL, Dubai, LHR"},
                 "destination": {"type": "string"},
                 "date": {"type": "string", "description": "YYYY-MM-DD"},
                 "adults": {"type": "integer", "minimum": 1, "maximum": 6, "default": 1},
@@ -99,7 +100,8 @@ TOOLS: list[dict] = [
         "description": "Create a DRAFT booking/order and send the user Confirm/Cancel buttons. This does NOT "
         "book or charge anything; the user must tap Confirm and then pay via the link themselves. "
         "Flights/trains need offer_id and every passenger's full name, age and gender. "
-        "Food needs restaurant_id and items; delivery_address defaults to the saved profile address.",
+        "Food needs restaurant_id and items; delivery_address defaults to the saved profile address. "
+        "Food drafts offer the user both Pay online and Cash on delivery buttons.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -130,6 +132,26 @@ TOOLS: list[dict] = [
                 "delivery_address": {"type": "string"},
             },
             "required": ["kind"],
+        },
+    },
+    {
+        "name": "web_search",
+        "description": "Search the live web (news, movies, sports, prices, places, how-tos, anything current or "
+        "that you're unsure about). Returns titles, snippets and URLs. Use it instead of guessing facts.",
+        "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+    },
+    {
+        "name": "read_webpage",
+        "description": "Read the text of a public web page (e.g. a search result) to answer in detail.",
+        "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
+    },
+    {
+        "name": "get_weather",
+        "description": "Live current weather and up to 7-day forecast for any city in the world.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"city": {"type": "string", "description": "City, optionally with country: 'Goa', 'Paris, France'"}, "days": {"type": "integer", "minimum": 1, "maximum": 7}},
+            "required": ["city"],
         },
     },
     {
@@ -280,11 +302,12 @@ async def prepare_booking(ctx: ToolContext, kind: str, offer_id: str | None = No
     if pax:
         lines.append("👤 " + ", ".join(f"{p['name']} ({p['age']}{p['gender']})" for p in pax))
     lines.append(f"\n*Total: ₹{amount:,}*")
-    ctx.show(
-        "confirm",
-        buttons_message("\n".join(lines), [(f"bk:confirm:{b.id}", "✅ Confirm & pay"), (f"bk:cancel:{b.id}", "❌ Cancel")],
-                        footer=f"Ref {b.ref} · nothing is charged until you pay")  # fmt: skip
-    )
+    if kind == "food":
+        buttons = [(f"bk:confirm:{b.id}", "💳 Pay online"), (f"bk:cod:{b.id}", "💵 Cash on delivery"),
+                   (f"bk:cancel:{b.id}", "❌ Cancel")]  # fmt: skip
+    else:
+        buttons = [(f"bk:confirm:{b.id}", "✅ Confirm & pay"), (f"bk:cancel:{b.id}", "❌ Cancel")]
+    ctx.show("confirm", buttons_message("\n".join(lines), buttons, footer=f"Ref {b.ref} · nothing is charged until you confirm"))
     return {"ref": b.ref, "amount_inr": amount, "status": "awaiting_user_confirmation",
             "note": "Confirm/Cancel buttons were sent. It is NOT booked yet; tell the user to review and tap Confirm."}  # fmt: skip
 
@@ -309,7 +332,22 @@ async def update_profile(ctx: ToolContext, **fields: Any) -> dict:
     return {"saved": sorted(clean), "profile": ctx.contact.profile}
 
 
+async def web_search(ctx: ToolContext, query: str) -> dict:
+    return await web.web_search(query)
+
+
+async def read_webpage(ctx: ToolContext, url: str) -> dict:
+    return await web.read_webpage(url)
+
+
+async def get_weather(ctx: ToolContext, city: str, days: int = 3) -> dict:
+    return await web.weather(city, days)
+
+
 REGISTRY = {
+    "web_search": web_search,
+    "read_webpage": read_webpage,
+    "get_weather": get_weather,
     "search_flights": search_flights,
     "search_trains": search_trains,
     "search_restaurants": search_restaurants,

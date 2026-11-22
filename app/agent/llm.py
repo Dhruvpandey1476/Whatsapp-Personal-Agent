@@ -120,7 +120,7 @@ class OpenAICompatibleLLM:
         headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
         if self.provider == "openrouter":
             headers["X-Title"] = settings.app_name
-        self.http = http or httpx.AsyncClient(timeout=60, headers=headers)
+        self.http = http or httpx.AsyncClient(timeout=25, headers=headers)
 
     async def create(self, *, system: str, tools: list[dict], messages: list[dict]) -> dict:
         try:

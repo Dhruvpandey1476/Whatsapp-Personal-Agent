@@ -112,6 +112,12 @@ async def _booking_button(ctx: ToolContext, reply_id: str) -> None:
                 f"The link is valid for {settings.payment_link_minutes} minutes.",
                 f"Pay ₹{b.amount:,}", bookings.payment_url(b), footer=f"Ref {b.ref}"))  # fmt: skip
             await remember(ctx, f"user confirmed {b.ref}; payment link sent, waiting for the user to pay")
+        elif action == "cod":
+            b = await bookings.place_cod(db, contact, booking_id)
+            await say(db, contact, text_message(
+                f"✅ *Order placed: {b.title}*\nOrder ID: *{b.confirmation_code}*\n"
+                f"💵 Pay *₹{b.amount:,}* in cash on delivery\n🛵 Arriving in ~{b.details['eta_min']} min"))  # fmt: skip
+            await remember(ctx, f"user placed {b.ref} with cash on delivery; order id {b.confirmation_code}")
         elif action == "cancel":
             b = await bookings.cancel(db, contact, booking_id)
             await say(db, contact, text_message(f"❌ Draft {b.ref} discarded. Anything else I can do?"))

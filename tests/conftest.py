@@ -19,6 +19,8 @@ os.environ.update(
     LLM_PROVIDER="gemini",
     LLM_MODEL="",
     LLM_BASE_URL="",
+    MAX_ORDER_AMOUNT="25000",
+    TAVILY_API_KEY="",
     PUBLIC_BASE_URL="http://test",
     ENVIRONMENT="test",
 )

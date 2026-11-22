@@ -33,9 +33,11 @@ class Settings(BaseSettings):
     agent_max_steps: int = 8  # max tool-use iterations per user message
     history_messages: int = 30  # short-term conversation memory kept per user
 
+    tavily_api_key: str = ""  # optional: best web search (tavily.com free tier); falls back to free sources
+
     # --- Guardrails / payments
     public_base_url: str = "http://localhost:8000"  # where the checkout page is reachable (ngrok URL)
-    max_order_amount: int = 25000  # INR; agent refuses to prepare anything above this
+    max_order_amount: int = 200000  # INR; agent refuses to prepare anything above this
     payment_link_minutes: int = 15
 
     timezone: str = "Asia/Kolkata"

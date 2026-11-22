@@ -2,6 +2,7 @@
 
 from datetime import date, timedelta
 
+import pytest
 from sqlalchemy import select
 
 from app.agent.agent import set_llm
@@ -242,3 +243,49 @@ async def test_repeated_searches_in_one_turn_send_one_list(client):
 def test_overnight_arrival_is_marked():
     assert mock._hhmm(3 * 60 + 40 + 25 * 60) == "04:40 (+1)"
     assert mock._hhmm(9 * 60) == "09:00"
+
+
+async def test_food_cash_on_delivery(client):
+    set_llm(ScriptedLLM(tool("prepare_booking", kind="food", restaurant_id="R3", items=[{"item_id": "R3-1", "qty": 2}],
+                             delivery_address="G-257 Akash Nagar"), say("Choose how to pay")))  # fmt: skip
+    await post_webhook(client, text_payload("2 masala dosa"))
+    [b] = await bookings()
+    assert row_ids(last_out()) == [f"bk:confirm:{b.id}", f"bk:cod:{b.id}", f"bk:cancel:{b.id}"]
+    await post_webhook(client, reply_payload(f"bk:cod:{b.id}", kind="button_reply"))
+    [b] = await bookings()
+    assert b.status == "confirmed" and b.details["payment"] == "cash_on_delivery"
+    assert "cash on delivery" in body(last_out()) and b.confirmation_code in body(last_out())
+    await post_webhook(client, reply_payload(f"bk:cod:{b.id}", kind="button_reply"))  # double tap is rejected
+    assert "already confirmed" in body(last_out())
+
+
+async def test_cod_not_allowed_for_flights(client):
+    offer = mock.flights.search("DEL", "BOM", D)[0]
+    set_llm(ScriptedLLM(tool("prepare_booking", kind="flight", offer_id=offer["offer_id"],
+                             passengers=[{"name": "A", "age": 30, "gender": "M"}]), say("ok")))  # fmt: skip
+    await post_webhook(client, text_payload("book"))
+    [b] = await bookings()
+    assert len(row_ids(last_out())) == 2  # no COD button
+    await post_webhook(client, reply_payload(f"bk:cod:{b.id}", kind="button_reply"))
+    assert (await bookings())[0].status == "pending_confirmation"
+
+
+def test_international_flights():
+    f = mock.flights.search("Delhi", "Chicago", D)
+    assert f and f[0]["to"] == "ORD" and f[0]["international"] and f[0]["total"] > 30000
+    assert mock.resolve_airport("maldives") == "MLE"
+    with pytest.raises(ValueError, match="within India"):
+        mock.trains.search("Delhi", "Dubai", D)
+
+
+def test_weather_place_selection():
+    from app.services.web import REGIONS, pick_place
+
+    hyd = [{"name": "Hyderabad", "country": "Pakistan", "country_code": "PK", "population": 1386330},
+           {"name": "Hyderabad", "country": "India", "country_code": "IN", "population": 3597816}]  # fmt: skip
+    dubai = [{"name": "Dubai", "country": "United Arab Emirates", "country_code": "AE", "population": 3790000},
+             {"name": "Dubai", "country": "India", "country_code": "IN", "population": 2139}]  # fmt: skip
+    assert pick_place(hyd)["country_code"] == "IN"
+    assert pick_place(dubai)["country_code"] == "AE"  # a village in UP must not win
+    assert pick_place(hyd, "Pakistan")["country_code"] == "PK"
+    assert REGIONS["goa"]["country"] == "India"

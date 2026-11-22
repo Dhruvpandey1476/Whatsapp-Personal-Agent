@@ -16,6 +16,15 @@ CITIES = {  # IATA code -> (city, main railway station code)
 ALIASES = {"new delhi": "DEL", "bombay": "BOM", "bangalore": "BLR", "madras": "MAA", "calcutta": "CCU",
            "gurgaon": "DEL", "gurugram": "DEL", "noida": "DEL", "cochin": "COK"}  # fmt: skip
 STATIONS = {stn: iata for iata, (_, stn) in CITIES.items()}
+INTL = {  # IATA code -> city (flights only)
+    "DXB": "Dubai", "SIN": "Singapore", "BKK": "Bangkok", "LHR": "London", "JFK": "New York",
+    "ORD": "Chicago", "SFO": "San Francisco", "YYZ": "Toronto", "CDG": "Paris", "FRA": "Frankfurt",
+    "SYD": "Sydney", "KUL": "Kuala Lumpur", "DOH": "Doha", "HKG": "Hong Kong", "NRT": "Tokyo",
+    "CMB": "Colombo", "KTM": "Kathmandu", "MLE": "Male",
+}  # fmt: skip
+INTL_ALIASES = {"nyc": "JFK", "new york city": "JFK", "maldives": "MLE", "sri lanka": "CMB", "nepal": "KTM",
+                "uk": "LHR", "england": "LHR", "japan": "NRT", "usa": "JFK", "us": "JFK"}  # fmt: skip
+SUPPORTED_INTL = ", ".join(INTL.values())
 SUPPORTED = ", ".join(c for c, _ in CITIES.values())
 
 
@@ -34,10 +43,25 @@ def resolve_city(value: str) -> str | None:
     return None
 
 
-def _route(origin: str, destination: str, date: str) -> tuple[str, str]:
-    o, d = resolve_city(origin), resolve_city(destination)
+def resolve_airport(value: str) -> str | None:
+    """Domestic city/station or an international airport, e.g. 'Chicago' -> 'ORD'."""
+    code = resolve_city(value)
+    if code:
+        return code
+    v = value.strip().lower()
+    if v.upper() in INTL:
+        return v.upper()
+    if v in INTL_ALIASES:
+        return INTL_ALIASES[v]
+    return next((c for c, city in INTL.items() if city.lower() == v or (len(v) >= 3 and city.lower().startswith(v))), None)
+
+
+def _route(origin: str, destination: str, date: str, international: bool = False) -> tuple[str, str]:
+    resolve = resolve_airport if international else resolve_city
+    o, d = resolve(origin), resolve(destination)
     if not o or not d:
-        raise ValueError(f"Unknown city. Supported cities: {SUPPORTED}")
+        extra = f". International: {SUPPORTED_INTL}" if international else " (trains run within India only)"
+        raise ValueError(f"Unknown city. Supported cities: {SUPPORTED}{extra}")
     if o == d:
         raise ValueError("Origin and destination are the same")
     if Date.fromisoformat(date) < Date.today():
@@ -57,23 +81,35 @@ def _hhmm(minutes: int) -> str:
 
 class MockFlightProvider:
     AIRLINES = [("6E", "IndiGo"), ("AI", "Air India"), ("QP", "Akasa Air"), ("SG", "SpiceJet"), ("IX", "AI Express")]
+    INTL_AIRLINES = [("EK", "Emirates"), ("AI", "Air India"), ("QR", "Qatar Airways"), ("SQ", "Singapore Airlines"),
+                     ("LH", "Lufthansa"), ("BA", "British Airways"), ("6E", "IndiGo"), ("UA", "United")]  # fmt: skip
 
     def search(self, origin: str, destination: str, date: str, adults: int = 1) -> list[dict]:
-        o, d = _route(origin, destination, date)
+        o, d = _route(origin, destination, date, international=True)
+        intl = o in INTL or d in INTL
+        far = intl and (o in ("LHR", "JFK", "ORD", "SFO", "YYZ", "CDG", "FRA", "SYD", "NRT") or
+                        d in ("LHR", "JFK", "ORD", "SFO", "YYZ", "CDG", "FRA", "SYD", "NRT"))  # fmt: skip
         r = _rng("flight", o, d, date)
         out = []
         for i in range(6):
-            code, name = r.choice(self.AIRLINES)
-            dep = r.randrange(5 * 60, 23 * 60, 5)
-            stops = 0 if r.random() < 0.7 else 1
-            dur = r.randrange(70, 200, 5) + stops * 75
-            fare = r.randrange(3200, 11000, 10) - stops * 600
+            code, name = r.choice(self.INTL_AIRLINES if intl else self.AIRLINES)
+            dep = r.randrange(0 if intl else 5 * 60, 23 * 60, 5)
+            stops = (0 if r.random() < 0.4 else 1) if far else (0 if r.random() < 0.7 else 1)
+            if far:
+                dur, fare = r.randrange(9 * 60, 16 * 60, 5), r.randrange(42000, 95000, 10)
+            elif intl:
+                dur, fare = r.randrange(150, 360, 5), r.randrange(11000, 32000, 10)
+            else:
+                dur, fare = r.randrange(70, 200, 5), r.randrange(3200, 11000, 10)
+            dur += stops * (150 if intl else 75)
+            fare -= stops * (fare // 8)
             out.append({
                 "offer_id": f"FL:{o}:{d}:{date}:{adults}:{i}",
                 "airline": name, "flight_no": f"{code}-{r.randint(100, 999)}",
                 "from": o, "to": d, "date": date, "depart": _hhmm(dep), "arrive": _hhmm(dep + dur),
                 "duration_min": dur, "stops": stops, "fare_per_adult": fare, "adults": adults,
-                "total": fare * adults, "baggage": "15kg check-in + 7kg cabin",
+                "total": fare * adults, "international": intl,
+                "baggage": "30kg check-in + 7kg cabin" if intl else "15kg check-in + 7kg cabin",
             })  # fmt: skip
         return sorted(out, key=lambda x: x["total"])
 

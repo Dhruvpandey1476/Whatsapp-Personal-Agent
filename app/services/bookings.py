@@ -72,6 +72,22 @@ async def confirm(db: AsyncSession, contact: Contact, booking_id: int) -> Bookin
     return b
 
 
+async def place_cod(db: AsyncSession, contact: Contact, booking_id: int) -> Booking:
+    """Cash on delivery (food only): the order is placed now and paid to the delivery partner."""
+    b = await get_for_contact(db, contact, booking_id)
+    if b.kind != "food":
+        raise BookingError("Cash on delivery is only available for food orders")
+    if b.status == "superseded":
+        raise BookingError(f"That option ({b.ref}) was replaced by your newer selection")
+    if b.status != "pending_confirmation":
+        raise BookingError(f"Order {b.ref} is already {b.status.replace('_', ' ')}")
+    b.status = "confirmed"
+    b.details = {**b.details, "payment": "cash_on_delivery"}  # reassign so the JSON change is saved
+    b.confirmation_code = "ORD" + _code(7, string.digits)
+    await db.commit()
+    return b
+
+
 def expired(b: Booking) -> bool:
     return b.status == "awaiting_payment" and utcnow() - b.updated_at > timedelta(minutes=settings.payment_link_minutes)
 
@@ -134,5 +150,6 @@ def summary(b: Booking) -> dict:
         "amount_inr": b.amount,
         "status": "expired" if expired(b) else b.status,
         "confirmation_code": b.confirmation_code,
+        "payment": (b.details or {}).get("payment", "online"),
         "created_at": b.created_at.isoformat(timespec="minutes"),
     }

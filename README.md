@@ -1,7 +1,7 @@
 # WhatsApp Personal AI Agent
 
-A personal assistant that lives in WhatsApp and **gets tasks done**: book flights, book trains and order
-food, all by chatting in plain English, Hindi or Hinglish. It's built on the official **Meta WhatsApp Cloud API**,
+A personal assistant that lives in WhatsApp and **gets tasks done** (book flights, book trains, order food) and **talks about anything else**, using live
+web search and weather. All by chatting in plain English, Hindi or Hinglish. It's built on the official **Meta WhatsApp Cloud API**,
 with a **pluggable LLM (Gemini, Groq or OpenRouter)** as a tool-using agent and a **human-in-the-loop checkout**, so the AI can never spend money by itself.
 
 ```
@@ -23,9 +23,11 @@ Agent:  🎉 Payment received: ₹4,280 · PNR: *QKZTRM*
 
 | Service | Capabilities |
 |---|---|
-| ✈️ **Flights** | Search by city or IATA code, with date, adults, sort (cheapest / earliest / fastest) and a departure time window |
+| ✈️ **Flights** | Domestic + **international** (Dubai, Singapore, London, New York, Chicago, Toronto, Tokyo, Sydney…). Search by city or IATA code, with date, adults, sort (cheapest / earliest / fastest) and a departure time window. Overnight arrivals marked `(+1)` |
 | 🚆 **Trains** | IRCTC-style search with per-class fares (1A/2A/3A/CC/SL) and live-looking availability or waitlist. Waitlisted classes can't be booked. 10-digit PNR |
-| 🍔 **Food** | Find restaurants by dish or cuisine, veg-only filter, menus, multi-item cart, delivery fee and taxes, saved address |
+| 🍔 **Food** | Find restaurants by dish or cuisine, veg-only filter, menus, multi-item cart, delivery fee and taxes, saved address. **Pay online or cash on delivery** |
+| 🌐 **Live info** | `web_search` (Tavily if a key is set, otherwise DuckDuckGo → Google News → Wikipedia), `read_webpage` (public URLs only), `get_weather` (Open-Meteo, any city) |
+| 💬 **General chat** | Answers any question and gives advice and recommendations. For things it can't book (hotels, cabs, movie tickets) it searches and shares links |
 | 🧠 **Memory** | Long-term **profile** (name, age, gender, address, preferences) saved automatically, so "book the same for me" works. Short-term chat history per user |
 | 📋 **Manage** | "show my bookings", "cancel FL-7K2Q9A" (refund shown). Paid food orders can't be cancelled |
 
@@ -80,7 +82,8 @@ Every tool call is stored in `tool_traces` (input, output, error, latency):
 | Flight inventory | Mock, deterministic | Implement `FlightProvider` with Amadeus / Duffel / TBO |
 | Train inventory | Mock | IRCTC has no public API, so this needs an authorised agent (B2B) API |
 | Food | Mock | ONDC buyer app or a restaurant partner API |
-| Payment | Test checkout page | Swap for a Razorpay Payment Link and call `mark_paid` from its signed webhook |
+| Payment | Test checkout page + cash on delivery (food) | Swap for a Razorpay Payment Link and call `mark_paid` from its signed webhook |
+| Web search, page reading, weather | **Real, live** | Add `TAVILY_API_KEY` for the best search quality |
 
 Each provider sits behind an interface (`app/providers/base.py`), so going live means writing **one class**.
 The agent, tools and checkout flow don't change.
