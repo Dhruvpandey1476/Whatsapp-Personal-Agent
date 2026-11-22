@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     llm_provider: str = "gemini"  # gemini | groq | openrouter
     llm_api_key: str = ""
     llm_model: str = ""  # empty => provider default (see app/agent/llm.py)
+    llm_fallback_model: str = ""  # used once when the main model is rate-limited (429)
     llm_base_url: str = ""  # optional override of the provider's OpenAI-compatible endpoint
     llm_enabled: bool = True
     agent_max_steps: int = 8  # max tool-use iterations per user message

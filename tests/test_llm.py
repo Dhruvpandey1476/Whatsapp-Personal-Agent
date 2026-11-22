@@ -1,5 +1,6 @@
 """The OpenAI-compatible adapter (Gemini / Groq / OpenRouter), tested against a fake HTTP transport."""
 
+import asyncio
 import json
 
 import httpx
@@ -59,3 +60,23 @@ async def test_non_retryable_error_raises():
 def test_unknown_provider_rejected():
     with pytest.raises(ValueError):
         OpenAICompatibleLLM("anthropic")
+
+
+async def test_rate_limit_falls_back_to_second_model(monkeypatch):
+    from app.agent import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.settings, "llm_fallback_model", "small-model")
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(llm_mod.asyncio, "sleep", lambda s: real_sleep(0))  # skip backoff waits
+    models = []
+
+    def handler(req):
+        model = json.loads(req.content)["model"]
+        models.append(model)
+        if model != "small-model":
+            return httpx.Response(429, json={"error": "quota"})
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": "hi"}}]})
+
+    llm = OpenAICompatibleLLM("gemini", http=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    out = await llm.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])
+    assert out["content"][0]["text"] == "hi" and models[-1] == "small-model" and models.count("small-model") == 1

@@ -235,3 +235,8 @@ async def test_repeated_searches_in_one_turn_send_one_list(client):
     await post_webhook(client, text_payload("capsicum pizza"))
     lists = [m for m in outbound() if m["type"] == "interactive"]
     assert len(lists) == 1
+
+
+def test_overnight_arrival_is_marked():
+    assert mock._hhmm(3 * 60 + 40 + 25 * 60) == "04:40 (+1)"
+    assert mock._hhmm(9 * 60) == "09:00"

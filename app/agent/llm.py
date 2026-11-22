@@ -28,7 +28,13 @@ RETRYABLE = {429, 500, 502, 503, 504}
 
 
 class LLMError(Exception):
-    pass
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
+
+
+class RateLimited(LLMError):
+    """Quota / rate limit exhausted even after retries."""
 
 
 def _clean_schema(schema: Any) -> Any:
@@ -117,8 +123,18 @@ class OpenAICompatibleLLM:
         self.http = http or httpx.AsyncClient(timeout=60, headers=headers)
 
     async def create(self, *, system: str, tools: list[dict], messages: list[dict]) -> dict:
+        try:
+            return await self._create(self.model, system, tools, messages)
+        except RateLimited:
+            fallback = settings.llm_fallback_model
+            if not fallback or fallback == self.model:
+                raise
+            log.warning("%s rate-limited, falling back to %s", self.model, fallback)
+            return await self._create(fallback, system, tools, messages)
+
+    async def _create(self, model: str, system: str, tools: list[dict], messages: list[dict]) -> dict:
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": to_openai_messages(system, messages),
             "tools": to_openai_tools(tools),
             "tool_choice": "auto",
@@ -135,7 +151,8 @@ class OpenAICompatibleLLM:
                 if resp.status_code == 200:
                     return from_openai_response(resp.json())
                 if resp.status_code not in RETRYABLE or attempt == 2:
-                    raise LLMError(f"{self.provider} HTTP {resp.status_code}: {resp.text[:300]}")
+                    err = RateLimited if resp.status_code == 429 else LLMError
+                    raise err(f"{self.provider} HTTP {resp.status_code}: {resp.text[:300]}", resp.status_code)
                 log.warning("%s HTTP %s, retrying", self.provider, resp.status_code)
             await asyncio.sleep(1.5 * 2**attempt)
         raise LLMError("unreachable")

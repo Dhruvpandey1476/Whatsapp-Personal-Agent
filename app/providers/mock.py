@@ -50,7 +50,9 @@ def _rng(*parts: object) -> random.Random:
 
 
 def _hhmm(minutes: int) -> str:
-    return f"{(minutes // 60) % 24:02d}:{minutes % 60:02d}"
+    """Clock time; adds a (+1) day marker when the time falls on a later day (overnight journeys)."""
+    days = minutes // (24 * 60)
+    return f"{(minutes // 60) % 24:02d}:{minutes % 60:02d}" + (f" (+{days})" if days else "")
 
 
 class MockFlightProvider:
