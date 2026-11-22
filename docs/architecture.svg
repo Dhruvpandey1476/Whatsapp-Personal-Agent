@@ -1,0 +1,244 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1010" width="1600" height="1010" font-family="Segoe UI, system-ui, -apple-system, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/>
+    </marker>
+    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/>
+    </marker>
+    <style>
+      .t{font-size:15px;font-weight:700;fill:#0f172a}
+      .s{font-size:12.5px;fill:#334155}
+      .xs{font-size:11.5px;fill:#475569}
+      .lbl{font-size:12px;font-weight:600;fill:#334155}
+      .num{font-size:12px;font-weight:700;fill:#fff}
+      .flow{stroke:#475569;stroke-width:2;fill:none}
+      .money{stroke:#c2410c;stroke-width:2.2;fill:none}
+      .ai{stroke:#7c3aed;stroke-width:2;fill:none}
+      .data{stroke:#64748b;stroke-width:1.6;fill:none;stroke-dasharray:6 4}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="1010" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="40" y="44" font-size="26" font-weight="800" fill="#0f172a">WhatsApp Personal AI Agent: system architecture</text>
+  <text x="40" y="70" class="s">Flights (domestic + international) · trains · food (online / cash on delivery) · live web search &amp; weather · general chat. The LLM can prepare, but never confirm or pay.</text>
+
+  <!-- ============ Column A/B: user + Meta ============ -->
+  <rect x="40" y="140" width="180" height="110" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="130" y="178" text-anchor="middle" class="t">👤 User</text>
+  <text x="130" y="200" text-anchor="middle" class="s">WhatsApp app</text>
+  <text x="130" y="220" text-anchor="middle" class="xs">types · taps lists</text>
+  <text x="130" y="236" text-anchor="middle" class="xs">&amp; buttons</text>
+
+  <rect x="280" y="140" width="200" height="110" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="380" y="178" text-anchor="middle" class="t">Meta WhatsApp</text>
+  <text x="380" y="198" text-anchor="middle" class="t">Cloud API</text>
+  <text x="380" y="222" text-anchor="middle" class="xs">official Graph API</text>
+  <text x="380" y="238" text-anchor="middle" class="xs">webhooks · /messages</text>
+
+  <!-- ============ FastAPI backend container ============ -->
+  <rect x="540" y="100" width="640" height="610" rx="18" fill="#f8fafc" stroke="#2563eb" stroke-width="2.2"/>
+  <text x="560" y="126" font-size="14" font-weight="800" fill="#1d4ed8">FastAPI backend (Python, async)</text>
+
+  <rect x="570" y="140" width="200" height="90" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="1.6"/>
+  <text x="670" y="168" text-anchor="middle" class="t">POST /webhook</text>
+  <text x="670" y="190" text-anchor="middle" class="s">HMAC-SHA256 verify</text>
+  <text x="670" y="208" text-anchor="middle" class="s">instant 200 ACK</text>
+
+  <rect x="840" y="140" width="310" height="90" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="1.6"/>
+  <text x="995" y="168" text-anchor="middle" class="t">Inbound processor (background)</text>
+  <text x="995" y="190" text-anchor="middle" class="s">dedupe on wamid (Meta retries)</text>
+  <text x="995" y="208" text-anchor="middle" class="s">per-user lock · save message</text>
+
+  <rect x="570" y="270" width="200" height="70" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="1.6"/>
+  <text x="670" y="296" text-anchor="middle" class="t">Messaging service</text>
+  <text x="670" y="316" text-anchor="middle" class="xs">24h window · persist · retries</text>
+  <text x="670" y="331" text-anchor="middle" class="xs">sent → delivered → read</text>
+
+  <rect x="840" y="270" width="310" height="70" rx="10" fill="#e0e7ff" stroke="#4f46e5" stroke-width="1.6"/>
+  <text x="995" y="297" text-anchor="middle" class="t">Engine (router)</text>
+  <text x="995" y="318" text-anchor="middle" class="s">button taps → code · free text → agent</text>
+
+  <rect x="570" y="390" width="230" height="90" rx="10" fill="#ffedd5" stroke="#c2410c" stroke-width="1.8"/>
+  <text x="685" y="416" text-anchor="middle" class="t">Button handler</text>
+  <text x="685" y="436" text-anchor="middle" class="s">plain code, NO LLM</text>
+  <text x="685" y="456" text-anchor="middle" class="xs">✅ Confirm · 💵 Cash on delivery</text>
+  <text x="685" y="471" text-anchor="middle" class="xs">❌ Cancel</text>
+
+  <rect x="860" y="390" width="290" height="90" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.8"/>
+  <text x="1005" y="416" text-anchor="middle" class="t">🧠 Agent loop</text>
+  <text x="1005" y="436" text-anchor="middle" class="s">LLM ⇄ tools until done (max 8 steps)</text>
+  <text x="1005" y="454" text-anchor="middle" class="xs">system prompt · profile memory · history</text>
+  <text x="1005" y="470" text-anchor="middle" class="xs">tool errors returned to LLM to recover</text>
+
+  <rect x="570" y="520" width="230" height="80" rx="10" fill="#ffedd5" stroke="#c2410c" stroke-width="1.8"/>
+  <text x="685" y="546" text-anchor="middle" class="t">Booking service</text>
+  <text x="685" y="566" text-anchor="middle" class="xs">draft → confirm → pay lifecycle</text>
+  <text x="685" y="582" text-anchor="middle" class="xs">spend limit · ownership · expiry</text>
+
+  <rect x="860" y="560" width="290" height="60" rx="10" fill="#fef2f2" stroke="#dc2626" stroke-width="1.6"/>
+  <text x="1005" y="583" text-anchor="middle" font-size="13.5" font-weight="700" fill="#991b1b">🛡️ Guardrails</text>
+  <text x="1005" y="602" text-anchor="middle" class="xs">LLM never confirms/pays · stale-button guard</text>
+  <text x="1005" y="615" text-anchor="middle" class="xs">SSRF-safe page reader · signed webhooks</text>
+
+  <rect x="570" y="630" width="230" height="64" rx="10" fill="#ffedd5" stroke="#c2410c" stroke-width="1.8"/>
+  <text x="685" y="654" text-anchor="middle" class="t">Checkout /pay/{token}</text>
+  <text x="685" y="674" text-anchor="middle" class="xs">user pays → receipt + PNR on WhatsApp</text>
+  <text x="685" y="688" text-anchor="middle" class="xs">(swap: Razorpay link + webhook)</text>
+
+  <rect x="860" y="636" width="290" height="58" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-width="1.4"/>
+  <text x="1005" y="660" text-anchor="middle" class="t">Admin API (X-API-Key)</text>
+  <text x="1005" y="680" text-anchor="middle" class="xs">/api/traces · /api/bookings · history</text>
+
+  <!-- ============ Right column ============ -->
+  <rect x="1240" y="100" width="320" height="115" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="1400" y="128" text-anchor="middle" class="t">LLM adapter (OpenAI-compatible)</text>
+  <text x="1400" y="152" text-anchor="middle" class="s">Gemini · Groq · OpenRouter</text>
+  <text x="1400" y="172" text-anchor="middle" class="xs">switch with LLM_PROVIDER in .env</text>
+  <text x="1400" y="188" text-anchor="middle" class="xs">fallback model on 429 · retries · 25s timeout</text>
+  <text x="1400" y="204" text-anchor="middle" class="xs">keeps Gemini 3 thought signatures</text>
+
+  <rect x="1240" y="240" width="320" height="290" rx="14" fill="#faf5ff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="1400" y="264" text-anchor="middle" class="t">🔧 Tools (function calling)</text>
+
+  <rect x="1255" y="276" width="290" height="80" rx="9" fill="#ffffff" stroke="#c2410c" stroke-width="1.4"/>
+  <text x="1270" y="296" class="lbl">Action tools → provider interfaces</text>
+  <text x="1270" y="314" class="xs">search_flights · search_trains · search_restaurants</text>
+  <text x="1270" y="330" class="xs">get_menu · prepare_booking (draft) · cancel_booking</text>
+  <text x="1270" y="347" class="xs" font-style="italic">→ mock providers (demo inventory, swappable)</text>
+
+  <rect x="1255" y="364" width="290" height="80" rx="9" fill="#ffffff" stroke="#0891b2" stroke-width="1.4"/>
+  <text x="1270" y="384" class="lbl">Live info tools (real data)</text>
+  <text x="1270" y="402" class="xs">web_search · read_webpage · get_weather</text>
+  <text x="1270" y="418" class="xs">Tavily → DuckDuckGo → Google News → Wikipedia</text>
+  <text x="1270" y="435" class="xs" font-style="italic">→ Open-Meteo (weather, any city)</text>
+
+  <rect x="1255" y="452" width="290" height="66" rx="9" fill="#ffffff" stroke="#64748b" stroke-width="1.4"/>
+  <text x="1270" y="472" class="lbl">Memory tools</text>
+  <text x="1270" y="490" class="xs">update_profile (name, age, address, prefs)</text>
+  <text x="1270" y="506" class="xs">get_my_bookings</text>
+
+  <rect x="1240" y="560" width="320" height="150" rx="14" fill="#f1f5f9" stroke="#64748b" stroke-width="2"/>
+  <text x="1400" y="586" text-anchor="middle" class="t">🗄️ Database (SQLite → Postgres)</text>
+  <text x="1262" y="612" class="s">contacts: profile (long-term memory),</text>
+  <text x="1262" y="630" class="s">  history (short-term memory)</text>
+  <text x="1262" y="650" class="s">messages: every in/out + delivery status</text>
+  <text x="1262" y="670" class="s">bookings: draft / paid / COD, PNR</text>
+  <text x="1262" y="690" class="s">tool_traces: every tool call + latency</text>
+
+  <!-- ============ Arrows ============ -->
+  <!-- 1 user -> meta -->
+  <line x1="220" y1="180" x2="276" y2="180" class="flow" marker-end="url(#a)"/>
+  <!-- 2 meta -> webhook -->
+  <line x1="480" y1="180" x2="566" y2="180" class="flow" marker-end="url(#a)"/>
+  <!-- 3 webhook -> inbound -->
+  <line x1="770" y1="185" x2="836" y2="185" class="flow" marker-end="url(#a)"/>
+  <!-- 4 inbound -> engine -->
+  <line x1="995" y1="230" x2="995" y2="266" class="flow" marker-end="url(#a)"/>
+  <!-- 5a engine -> button handler -->
+  <path d="M900,340 V365 H720 V386" class="money" marker-end="url(#m)"/>
+  <!-- 5b engine -> agent -->
+  <line x1="1060" y1="340" x2="1060" y2="386" class="ai" marker-end="url(#p)"/>
+  <!-- 6 agent <-> LLM -->
+  <path d="M1150,420 H1195 V160 H1236" class="ai" marker-start="url(#p)" marker-end="url(#p)"/>
+  <!-- 7 agent -> tools -->
+  <path d="M1150,455 H1212 V385 H1236" class="ai" marker-end="url(#p)"/>
+  <!-- 8 agent (prepare_booking) -> booking service -->
+  <path d="M1005,480 V540 H804" class="money" marker-end="url(#m)"/>
+  <!-- 9 engine -> messaging -> meta (reply) -->
+  <line x1="840" y1="305" x2="774" y2="305" class="flow" marker-end="url(#a)"/>
+  <path d="M570,305 H400 V254" class="flow" marker-end="url(#a)"/>
+  <!-- meta -> user (delivered) -->
+  <path d="M300,250 V275 H150 V254" class="flow" marker-end="url(#a)"/>
+  <!-- button handler -> booking service -->
+  <line x1="685" y1="480" x2="685" y2="516" class="money" marker-end="url(#m)"/>
+  <!-- booking service -> checkout -->
+  <line x1="640" y1="600" x2="640" y2="626" class="money" marker-end="url(#m)"/>
+  <!-- 10 user -> checkout -->
+  <path d="M90,250 V662 H566" class="money" marker-end="url(#m)"/>
+  <!-- backend <-> DB -->
+  <line x1="1180" y1="640" x2="1236" y2="640" class="data" marker-end="url(#a)"/>
+
+  <!-- step numbers -->
+  <g>
+    <circle cx="248" cy="164" r="11" fill="#16a34a"/><text x="248" y="168" text-anchor="middle" class="num">1</text>
+    <circle cx="523" cy="164" r="11" fill="#16a34a"/><text x="523" y="168" text-anchor="middle" class="num">2</text>
+    <circle cx="805" cy="169" r="11" fill="#2563eb"/><text x="805" y="173" text-anchor="middle" class="num">3</text>
+    <circle cx="1013" cy="250" r="11" fill="#2563eb"/><text x="1013" y="254" text-anchor="middle" class="num">4</text>
+    <circle cx="810" cy="365" r="11" fill="#c2410c"/><text x="810" y="369" text-anchor="middle" class="num">5a</text>
+    <circle cx="1078" cy="365" r="11" fill="#7c3aed"/><text x="1078" y="369" text-anchor="middle" class="num">5b</text>
+    <circle cx="1195" cy="290" r="11" fill="#7c3aed"/><text x="1195" y="294" text-anchor="middle" class="num">6</text>
+    <circle cx="1212" cy="420" r="11" fill="#7c3aed"/><text x="1212" y="424" text-anchor="middle" class="num">7</text>
+    <circle cx="900" cy="540" r="11" fill="#c2410c"/><text x="900" y="544" text-anchor="middle" class="num">8</text>
+    <circle cx="545" cy="305" r="11" fill="#2563eb"/><text x="545" y="309" text-anchor="middle" class="num">9</text>
+    <circle cx="330" cy="662" r="12" fill="#c2410c"/><text x="330" y="666" text-anchor="middle" class="num">10</text>
+  </g>
+  <text x="488" y="200" class="xs">signed</text>
+  <text x="488" y="214" class="xs">webhook</text>
+  <text x="416" y="296" class="xs">reply · list · buttons</text>
+  <text x="860" y="358" class="xs">tap</text>
+  <text x="1088" y="384" class="xs">text</text>
+  <text x="1018" y="530" class="xs">prepare_booking = DRAFT only</text>
+  <text x="694" y="502" class="xs">confirm / COD</text>
+  <text x="648" y="617" class="xs">pay link</text>
+  <text x="120" y="652" class="xs">user opens link and pays themselves</text>
+
+  <!-- step list -->
+  <rect x="40" y="320" width="460" height="300" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.4"/>
+  <text x="58" y="346" class="t">How one request flows</text>
+  <text x="58" y="372" class="s">1  User sends "cheapest flight Delhi to Dubai Friday"</text>
+  <text x="58" y="394" class="s">2  Meta forwards it as a signed webhook</text>
+  <text x="58" y="416" class="s">3  Verify signature, ACK in ms, process in background</text>
+  <text x="58" y="438" class="s">4  Dedupe + lock, then route by message type</text>
+  <text x="58" y="460" class="s">5  Button tap → code path · text → agent loop</text>
+  <text x="58" y="482" class="s">6  LLM reasons and picks tools (provider-agnostic)</text>
+  <text x="58" y="504" class="s">7  Tools search flights / web / weather / memory</text>
+  <text x="58" y="526" class="s">8  prepare_booking creates a DRAFT + Confirm buttons</text>
+  <text x="58" y="548" class="s">9  Reply, tappable list and buttons sent to WhatsApp</text>
+  <text x="58" y="570" class="s">10 User taps Confirm, opens the link and pays (or COD)</text>
+  <text x="58" y="596" class="xs">→ receipt with PNR / order id arrives on WhatsApp; agent</text>
+  <text x="58" y="611" class="xs">   memory is updated so the next turn knows it's paid</text>
+
+  <!-- ============ Booking lifecycle ============ -->
+  <rect x="40" y="740" width="1520" height="170" rx="16" fill="#fff7ed" stroke="#fdba74" stroke-width="1.6"/>
+  <text x="60" y="768" font-size="15" font-weight="800" fill="#9a3412">Booking lifecycle: money only moves on explicit user actions</text>
+
+  <rect x="70" y="795" width="250" height="70" rx="10" fill="#ffffff" stroke="#c2410c" stroke-width="1.6"/>
+  <text x="195" y="822" text-anchor="middle" class="t">pending_confirmation</text>
+  <text x="195" y="844" text-anchor="middle" class="xs">draft created by the agent</text>
+
+  <rect x="470" y="795" width="230" height="70" rx="10" fill="#ffffff" stroke="#c2410c" stroke-width="1.6"/>
+  <text x="585" y="822" text-anchor="middle" class="t">awaiting_payment</text>
+  <text x="585" y="844" text-anchor="middle" class="xs">link valid 15 min</text>
+
+  <rect x="850" y="795" width="260" height="70" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="1.8"/>
+  <text x="980" y="822" text-anchor="middle" class="t">confirmed</text>
+  <text x="980" y="844" text-anchor="middle" class="xs">PNR / order id · receipt sent</text>
+
+  <rect x="1200" y="795" width="330" height="70" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.4"/>
+  <text x="1365" y="822" text-anchor="middle" class="t">superseded · cancelled · expired</text>
+  <text x="1365" y="844" text-anchor="middle" class="xs">stale buttons rejected, current draft re-offered</text>
+
+  <line x1="320" y1="822" x2="466" y2="822" class="money" marker-end="url(#m)"/>
+  <text x="330" y="812" class="xs">user taps ✅ Confirm</text>
+  <line x1="700" y1="822" x2="846" y2="822" class="money" marker-end="url(#m)"/>
+  <text x="712" y="812" class="xs">user pays on page</text>
+  <path d="M195,865 V890 H980 V869" class="money" marker-end="url(#m)"/>
+  <text x="460" y="884" class="xs">user taps 💵 Cash on delivery (food only)</text>
+  <path d="M260,795 V783 H1365 V791" class="data" marker-end="url(#a)"/>
+  <text x="1040" y="778" class="xs">newer pick · user cancels · link expires (draft or unpaid only)</text>
+
+  <!-- Legend -->
+  <g transform="translate(40,950)">
+    <line x1="0" y1="0" x2="40" y2="0" class="flow"/><text x="48" y="4" class="xs">request / message flow</text>
+    <line x1="220" y1="0" x2="260" y2="0" class="ai"/><text x="268" y="4" class="xs">AI reasoning &amp; tool calls</text>
+    <line x1="460" y1="0" x2="500" y2="0" class="money"/><text x="508" y="4" class="xs">money path (deterministic code + user action)</text>
+    <line x1="800" y1="0" x2="840" y2="0" class="data"/><text x="848" y="4" class="xs">persistence</text>
+    <text x="1000" y="4" class="xs">Stack: Python 3.12 · FastAPI · SQLAlchemy 2 (async) · httpx · Pydantic · pytest (26 tests)</text>
+  </g>
+</svg>

@@ -33,6 +33,10 @@ Agent:  🎉 Payment received: ₹4,280 · PNR: *QKZTRM*
 
 ## Architecture
 
+![System architecture](docs/architecture.svg)
+
+_Numbered steps follow one request from the user's message to the paid booking. The orange path is the money path: plain code plus explicit user actions, never the LLM._
+
 ```mermaid
 flowchart LR
     U[User on WhatsApp] <--> M[Meta Cloud API]
