@@ -20,6 +20,16 @@ class ToolContext:
     db: AsyncSession
     contact: Contact
     outbox: list[dict] = field(default_factory=list)
+    _slots: dict[str, int] = field(default_factory=dict)
+
+    def show(self, slot: str, message: dict) -> None:
+        """Queue an interactive message. A later message in the same slot replaces the earlier one, so a
+        model that searches several times in one turn still sends the user a single list."""
+        if slot in self._slots:
+            self.outbox[self._slots[slot]] = message
+        else:
+            self._slots[slot] = len(self.outbox)
+            self.outbox.append(message)
 
 
 class ToolError(Exception):
@@ -166,7 +176,7 @@ async def search_flights(ctx: ToolContext, origin: str, destination: str, date: 
          f"{f['depart']}→{f['arrive']} · {_fmt_dur(f['duration_min'])} · {'non-stop' if not f['stops'] else '1 stop'}")
         for f in results
     ]  # fmt: skip
-    ctx.outbox.append(list_message(f"✈️ {results[0]['from']} → {results[0]['to']} on {date}", "View flights", rows))
+    ctx.show("results", list_message(f"✈️ {results[0]['from']} → {results[0]['to']} on {date}", "View flights", rows))
     return {"results": results}
 
 
@@ -180,7 +190,7 @@ async def search_trains(ctx: ToolContext, origin: str, destination: str, date: s
                 rows.append((f"pick:{c['offer_id']}", f"₹{c['fare']:,} {t['train_no']} {cls}",
                              f"{t['name']} · {t['depart']}→{t['arrive']} · {c['status']}"))  # fmt: skip
     if rows:
-        ctx.outbox.append(list_message(f"🚆 Trains on {date} (available seats only)", "View trains", rows[:10]))
+        ctx.show("results", list_message(f"🚆 Trains on {date} (available seats only)", "View trains", rows[:10]))
     return {"results": results, "note": None if rows else "No confirmed seats; only waitlist available."}
 
 
@@ -188,7 +198,7 @@ async def search_restaurants(ctx: ToolContext, query: str = "", veg_only: bool =
     results = mock.food.search(query, veg_only)
     rows = [(f"rest:{r['id']}", r["name"], f"{'🟢 ' if r['veg'] else ''}{r['cuisine']} · ⭐{r['rating']} · {r['eta_min']} min")
             for r in results]  # fmt: skip
-    ctx.outbox.append(list_message("🍽️ Restaurants near you", "View restaurants", rows))
+    ctx.show("results", list_message("🍽️ Restaurants near you", "View restaurants", rows))
     return {"results": results}
 
 
@@ -270,7 +280,8 @@ async def prepare_booking(ctx: ToolContext, kind: str, offer_id: str | None = No
     if pax:
         lines.append("👤 " + ", ".join(f"{p['name']} ({p['age']}{p['gender']})" for p in pax))
     lines.append(f"\n*Total: ₹{amount:,}*")
-    ctx.outbox.append(
+    ctx.show(
+        "confirm",
         buttons_message("\n".join(lines), [(f"bk:confirm:{b.id}", "✅ Confirm & pay"), (f"bk:cancel:{b.id}", "❌ Cancel")],
                         footer=f"Ref {b.ref} · nothing is charged until you pay")  # fmt: skip
     )

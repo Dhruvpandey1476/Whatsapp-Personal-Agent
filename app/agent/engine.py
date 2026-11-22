@@ -5,6 +5,7 @@ goes to the LLM agent. Money-moving steps never depend on the model's judgement.
 """
 
 import logging
+import re
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +32,15 @@ WELCOME = (
 
 async def say(db: AsyncSession, contact: Contact, message: dict) -> None:
     await send_message(db, contact, message)
+
+
+def to_whatsapp(text: str) -> str:
+    """LLMs default to Markdown; convert it to WhatsApp's formatting."""
+    text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)  # **bold** -> *bold*
+    text = re.sub(r"__(.+?)__", r"_\1_", text)
+    text = re.sub(r"^#{1,6}\s*(.+)$", r"*\1*", text, flags=re.M)  # headings -> bold line
+    text = re.sub(r"^\s*[-*]\s+", "• ", text, flags=re.M)  # bullets
+    return text.strip()
 
 
 def _chunks(text: str, size: int = 4000) -> list[str]:
@@ -78,7 +88,7 @@ async def handle_message(db: AsyncSession, contact: Contact, msg: InboundMessage
         return
 
     if reply:
-        for part in _chunks(reply):
+        for part in _chunks(to_whatsapp(reply)):
             await say(db, contact, text_message(part))
     for interactive in ctx.outbox:
         await say(db, contact, interactive)

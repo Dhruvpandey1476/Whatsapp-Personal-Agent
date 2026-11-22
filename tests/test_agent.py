@@ -221,3 +221,17 @@ async def test_history_is_trimmed_without_orphan_tool_results():
          {"role": "user", "content": "c"}]  # fmt: skip
     assert _trim(h, 4)[0] == {"role": "user", "content": "c"}
     assert _trim(h, 5) == h
+
+
+def test_markdown_is_converted_to_whatsapp_format():
+    from app.agent.engine import to_whatsapp
+
+    assert to_whatsapp("## Options\n- **IndiGo** ₹4,280") == "*Options*\n• *IndiGo* ₹4,280"
+
+
+async def test_repeated_searches_in_one_turn_send_one_list(client):
+    set_llm(ScriptedLLM(tool("search_restaurants", query="pizza"), tool("search_restaurants", query="capsicum"),
+                        tool("search_restaurants", query="italian"), say("Here you go")))  # fmt: skip
+    await post_webhook(client, text_payload("capsicum pizza"))
+    lists = [m for m in outbound() if m["type"] == "interactive"]
+    assert len(lists) == 1

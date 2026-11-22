@@ -16,6 +16,9 @@ os.environ.update(
     API_KEY="test-key",
     LLM_ENABLED="true",
     LLM_API_KEY="test",
+    LLM_PROVIDER="gemini",
+    LLM_MODEL="",
+    LLM_BASE_URL="",
     PUBLIC_BASE_URL="http://test",
     ENVIRONMENT="test",
 )

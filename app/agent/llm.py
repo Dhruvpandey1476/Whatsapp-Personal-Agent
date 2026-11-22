@@ -20,7 +20,7 @@ from app.config import settings
 log = logging.getLogger(__name__)
 
 PROVIDERS = {
-    "gemini": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai", "model": "gemini-2.5-flash"},
+    "gemini": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai", "model": "gemini-3-flash-preview"},
     "groq": {"base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile"},
     "openrouter": {"base_url": "https://openrouter.ai/api/v1", "model": "google/gemini-2.5-flash"},
 }
@@ -59,7 +59,9 @@ def to_openai_messages(system: str, messages: list[dict]) -> list[dict]:
             text = "\n".join(b["text"] for b in content if b["type"] == "text").strip()
             calls = [
                 {"id": b["id"], "type": "function",
-                 "function": {"name": b["name"], "arguments": json.dumps(b.get("input") or {}, ensure_ascii=False)}}
+                 "function": {"name": b["name"], "arguments": json.dumps(b.get("input") or {}, ensure_ascii=False)},
+                 # Gemini 3 requires its thought signature to be echoed back with the tool call
+                 **({"extra_content": b["extra"]} if b.get("extra") else {})}
                 for b in content if b["type"] == "tool_use"
             ]  # fmt: skip
             msg: dict[str, Any] = {"role": "assistant", "content": text or None}
@@ -94,7 +96,8 @@ def from_openai_response(data: dict) -> dict:
         except json.JSONDecodeError:
             args = {}
         blocks.append({"type": "tool_use", "id": call.get("id") or f"call_{uuid.uuid4().hex[:12]}",
-                       "name": fn.get("name", ""), "input": args if isinstance(args, dict) else {}})  # fmt: skip
+                       "name": fn.get("name", ""), "input": args if isinstance(args, dict) else {},
+                       **({"extra": call["extra_content"]} if call.get("extra_content") else {})})  # fmt: skip
     # Some providers report finish_reason "stop" even when they returned tool calls.
     has_calls = any(b["type"] == "tool_use" for b in blocks)
     return {"content": blocks, "stop_reason": "tool_use" if has_calls else "end_turn"}

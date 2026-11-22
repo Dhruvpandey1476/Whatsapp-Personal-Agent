@@ -114,7 +114,7 @@ All three providers expose an OpenAI-compatible API, so a single adapter (`app/a
 
 | `LLM_PROVIDER` | Get a key | Default `LLM_MODEL` |
 |---|---|---|
-| `gemini` | aistudio.google.com/apikey (free tier) | `gemini-2.5-flash` |
+| `gemini` | aistudio.google.com/apikey (free tier) | `gemini-3-flash-preview` |
 | `groq` | console.groq.com/keys (free tier, very fast) | `llama-3.3-70b-versatile` |
 | `openrouter` | openrouter.ai/keys (any model) | `google/gemini-2.5-flash` |
 
