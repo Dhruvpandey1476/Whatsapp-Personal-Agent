@@ -182,9 +182,11 @@ async def test_new_draft_supersedes_old_and_stale_confirm_rejected(client):
     await post_webhook(client, text_payload("dosa"))
     await post_webhook(client, text_payload("actually make it again"))
     old, new = sorted(await bookings(), key=lambda b: b.id)
-    assert old.status == "cancelled" and new.status == "pending_confirmation"
+    assert old.status == "superseded" and new.status == "pending_confirmation"
     await post_webhook(client, reply_payload(f"bk:confirm:{old.id}", kind="button_reply"))
-    assert "already cancelled" in body(last_out())
+    # stale tap: explains and re-offers the buttons for the draft that is actually open
+    assert "replaced by your newer selection" in body(last_out())
+    assert row_ids(last_out()) == [f"bk:confirm:{new.id}", f"bk:cancel:{new.id}"]
 
 
 async def test_invalid_and_unpaid_links(client):

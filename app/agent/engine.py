@@ -16,7 +16,7 @@ from app.config import settings
 from app.models import Contact
 from app.services import bookings
 from app.services.messaging import send_message
-from app.whatsapp.client import cta_url_message, text_message
+from app.whatsapp.client import buttons_message, cta_url_message, text_message
 from app.whatsapp.parser import InboundMessage
 
 log = logging.getLogger(__name__)
@@ -119,4 +119,12 @@ async def _booking_button(ctx: ToolContext, reply_id: str) -> None:
         else:
             raise bookings.BookingError("Unknown action")
     except (bookings.BookingError, ValueError) as exc:
-        await say(db, contact, text_message(f"⚠️ {exc}"))
+        current = await bookings.latest_draft(db, contact)
+        if current and f":{current.id}" not in reply_id:
+            # A stale button was tapped: point the user at the draft that is actually open.
+            await say(db, contact, buttons_message(
+                f"⚠️ {exc}. Your current selection is:\n*{current.title}*\nTotal *₹{current.amount:,}*",
+                [(f"bk:confirm:{current.id}", "✅ Confirm & pay"), (f"bk:cancel:{current.id}", "❌ Cancel")],
+                footer=f"Ref {current.ref}"))  # fmt: skip
+        else:
+            await say(db, contact, text_message(f"⚠️ {exc}"))

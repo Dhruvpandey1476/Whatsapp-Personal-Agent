@@ -38,7 +38,7 @@ async def create_pending(db: AsyncSession, contact: Contact, kind: str, title: s
     for old in await db.scalars(
         select(Booking).where(Booking.contact_id == contact.id, Booking.status == "pending_confirmation")
     ):
-        old.status = "cancelled"
+        old.status = "superseded"
     b = Booking(
         ref=f"{PREFIX[kind]}-{_code(6)}",
         pay_token=secrets.token_urlsafe(24),
@@ -62,6 +62,8 @@ async def get_for_contact(db: AsyncSession, contact: Contact, booking_id: int) -
 
 async def confirm(db: AsyncSession, contact: Contact, booking_id: int) -> Booking:
     b = await get_for_contact(db, contact, booking_id)
+    if b.status == "superseded":
+        raise BookingError(f"That option ({b.ref}) was replaced by your newer selection")
     if b.status != "pending_confirmation":
         raise BookingError(f"Booking {b.ref} is already {b.status.replace('_', ' ')}")
     b.status = "awaiting_payment"
@@ -103,13 +105,20 @@ async def cancel(db: AsyncSession, contact: Contact, ref_or_id: str | int) -> Bo
         b = await db.scalar(select(Booking).where(Booking.ref == ref_or_id.upper(), Booking.contact_id == contact.id))
         if b is None:
             raise BookingError(f"No booking {ref_or_id}")
-    if b.status in ("cancelled", "expired"):
+    if b.status in ("cancelled", "expired", "superseded"):
         raise BookingError(f"Booking {b.ref} is already {b.status}")
     if b.kind == "food" and b.status == "confirmed":
         raise BookingError("Food orders can't be cancelled once paid (restaurant is already preparing it)")
     b.status = "cancelled"
     await db.commit()
     return b
+
+
+async def latest_draft(db: AsyncSession, contact: Contact) -> Booking | None:
+    return await db.scalar(
+        select(Booking).where(Booking.contact_id == contact.id, Booking.status == "pending_confirmation")
+        .order_by(Booking.id.desc()).limit(1)
+    )
 
 
 async def list_for_contact(db: AsyncSession, contact: Contact, limit: int = 10) -> list[Booking]:
