@@ -41,6 +41,10 @@ def to_whatsapp(text: str) -> str:
     text = re.sub(r"__(.+?)__", r"_\1_", text)
     text = re.sub(r"^#{1,6}\s*(.+)$", r"*\1*", text, flags=re.M)  # headings -> bold line
     text = re.sub(r"^\s*[-*]\s+", "• ", text, flags=re.M)  # bullets
+    # [title](url) -> "title: url"; drop opaque Google News redirect URLs entirely (unreadable on a phone)
+    text = re.sub(r"\[([^\]]+)\]\((https?://news\.google\.com/[^)]+)\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\((https?://[^)]+)\)", r"\1: \2", text)
+    text = re.sub(r"\s*\(?https?://news\.google\.com/\S+", "", text)
     return text.strip()
 
 

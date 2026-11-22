@@ -77,7 +77,8 @@ async def _google_news(query: str, limit: int) -> list[dict]:
     out = []
     for item in re.findall(r"<item>(.*?)</item>", r.text, re.S)[:limit]:
         get = lambda tag: _text(m.group(1)) if (m := re.search(rf"<{tag}>(.*?)</{tag}>", item, re.S)) else ""  # noqa: E731
-        out.append({"title": get("title"), "url": get("link"), "snippet": f"Published {get('pubDate')}"})
+        # Google News links are opaque redirects that can't be read or shown usefully, so keep only the headline.
+        out.append({"headline": get("title"), "published": get("pubDate")})
     return out
 
 
@@ -93,7 +94,11 @@ async def web_search(query: str, limit: int = 5) -> dict:
             log.warning("%s search failed: %s", name, exc)
             continue
         if results:
-            return {"source": name, "results": results}
+            out = {"source": name, "results": results}
+            if name == "google_news":
+                out["note"] = ("Headlines only (no article text). Use them as signals of what's current, combine "
+                               "with your own knowledge, and give the user a direct answer with specific picks.")
+            return out
     raise ValueError("Web search is unavailable right now")
 
 

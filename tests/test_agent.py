@@ -289,3 +289,12 @@ def test_weather_place_selection():
     assert pick_place(dubai)["country_code"] == "AE"  # a village in UP must not win
     assert pick_place(hyd, "Pakistan")["country_code"] == "PK"
     assert REGIONS["goa"]["country"] == "India"
+
+
+def test_markdown_links_are_made_whatsapp_friendly():
+    from app.agent.engine import to_whatsapp
+
+    out = to_whatsapp("See [29 best thrillers](https://news.google.com/rss/articles/CBMi123?oc=5) and "
+                      "[IMDb list](https://www.imdb.com/list/ls1)")
+    assert out == "See 29 best thrillers and IMDb list: https://www.imdb.com/list/ls1"
+    assert "news.google.com" not in to_whatsapp("More: https://news.google.com/rss/articles/abc?oc=5")
