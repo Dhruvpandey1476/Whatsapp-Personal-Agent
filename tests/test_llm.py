@@ -80,3 +80,24 @@ async def test_rate_limit_falls_back_to_second_model(monkeypatch):
     llm = OpenAICompatibleLLM("gemini", http=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     out = await llm.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])
     assert out["content"][0]["text"] == "hi" and models[-1] == "small-model" and models.count("small-model") == 1
+
+
+async def test_timeout_falls_back_to_second_model(monkeypatch):
+    from app.agent import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.settings, "llm_fallback_model", "small-model")
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(llm_mod.asyncio, "sleep", lambda s: real_sleep(0))
+    calls = []
+
+    def handler(req):
+        model = json.loads(req.content)["model"]
+        calls.append(model)
+        if model != "small-model":
+            raise httpx.ReadTimeout("hung", request=req)
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": "ok"}}]})
+
+    llm = OpenAICompatibleLLM("gemini", http=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    out = await llm.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])
+    assert out["content"][0]["text"] == "ok"
+    assert calls.count("small-model") == 1 and len(calls) == 3  # 2 tries on the hung model, then fallback

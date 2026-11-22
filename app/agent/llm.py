@@ -33,7 +33,11 @@ class LLMError(Exception):
         self.status = status
 
 
-class RateLimited(LLMError):
+class Unavailable(LLMError):
+    """The model can't answer right now (timeouts, 5xx, rate limit) even after retries: worth trying the fallback."""
+
+
+class RateLimited(Unavailable):
     """Quota / rate limit exhausted even after retries."""
 
 
@@ -125,11 +129,11 @@ class OpenAICompatibleLLM:
     async def create(self, *, system: str, tools: list[dict], messages: list[dict]) -> dict:
         try:
             return await self._create(self.model, system, tools, messages)
-        except RateLimited:
+        except Unavailable as exc:
             fallback = settings.llm_fallback_model
             if not fallback or fallback == self.model:
                 raise
-            log.warning("%s rate-limited, falling back to %s", self.model, fallback)
+            log.warning("%s unavailable (%s), falling back to %s", self.model, exc, fallback)
             return await self._create(fallback, system, tools, messages)
 
     async def _create(self, model: str, system: str, tools: list[dict], messages: list[dict]) -> dict:
@@ -145,13 +149,16 @@ class OpenAICompatibleLLM:
             try:
                 resp = await self.http.post(f"{self.base_url}/chat/completions", json=payload)
             except httpx.HTTPError as exc:
-                if attempt == 2:
-                    raise LLMError(f"{self.provider} unreachable: {exc}") from exc
+                # A hung model rarely recovers on the same model: retry once, then let create() fall back.
+                if attempt >= 1:
+                    raise Unavailable(f"{self.provider} unreachable: {exc.__class__.__name__} {exc}") from exc
+                log.warning("%s %s, retrying", self.provider, exc.__class__.__name__)
             else:
                 if resp.status_code == 200:
                     return from_openai_response(resp.json())
                 if resp.status_code not in RETRYABLE or attempt == 2:
-                    err = RateLimited if resp.status_code == 429 else LLMError
+                    err = (RateLimited if resp.status_code == 429
+                           else Unavailable if resp.status_code in RETRYABLE else LLMError)  # fmt: skip
                     raise err(f"{self.provider} HTTP {resp.status_code}: {resp.text[:300]}", resp.status_code)
                 log.warning("%s HTTP %s, retrying", self.provider, resp.status_code)
             await asyncio.sleep(1.5 * 2**attempt)

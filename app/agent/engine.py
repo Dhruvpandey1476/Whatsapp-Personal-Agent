@@ -10,7 +10,7 @@ import re
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.agent import remember, run_agent
-from app.agent.llm import RateLimited
+from app.agent.llm import Unavailable
 from app.agent.tools import ToolContext
 from app.config import settings
 from app.models import Contact
@@ -86,8 +86,8 @@ async def handle_message(db: AsyncSession, contact: Contact, msg: InboundMessage
 
     try:
         reply = await run_agent(ctx, text)
-    except RateLimited:
-        log.warning("LLM rate-limited for %s", contact.wa_id)
+    except Unavailable:
+        log.warning("LLM unavailable for %s", contact.wa_id)
         await db.rollback()
         await say(db, contact, text_message("⏳ I'm getting a lot of requests right now. Please try again in a minute."))
         return
