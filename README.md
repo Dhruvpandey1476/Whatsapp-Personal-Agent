@@ -124,6 +124,52 @@ All three providers expose an OpenAI-compatible API, so a single adapter (`app/a
 Set `LLM_MODEL` to use any other tool-calling model from that provider. Set `LLM_BASE_URL` to point at another
 OpenAI-compatible endpoint (for example a local Ollama).
 
+## Why no agent framework (and how this maps to LangGraph)
+
+The agent loop is written by hand (about 150 lines in `app/agent/agent.py` + `app/agent/llm.py`) instead of
+using LangChain / LangGraph / CrewAI. That was deliberate:
+
+- **Transparent:** every step (tool selection, tool results, memory trimming, error recovery) is visible
+  and debuggable. Supporting Gemini 3's thought signatures took a few lines in one adapter.
+- **Provider-agnostic:** switching Anthropic → Gemini / Groq / OpenRouter touched a single file.
+- **Safety lives outside the model:** Confirm and payment are plain code paths the LLM can't reach, so no
+  framework abstraction is needed (or able) to enforce them.
+- **Small footprint:** no framework dependencies to pin or upgrade.
+
+The design already follows LangGraph's model, so migrating is a mechanical change, not a rewrite:
+
+| This project | LangGraph equivalent |
+|---|---|
+| `run_agent()` loop in `agent.py` | `StateGraph` with an **agent** node and a **tools** node, plus a conditional edge "tool calls? → tools : END" |
+| `messages` list + `Contact.history` | Graph **state** (`MessagesState`) persisted with a **checkpointer** keyed by `thread_id = wa_id` |
+| `TOOLS` schemas + `REGISTRY` in `tools.py` | `@tool` functions bound with `llm.bind_tools(...)`, executed by `ToolNode` |
+| `ToolContext` (db session, contact, outbox) | Runtime config / injected state passed to tools |
+| `agent_max_steps = 8` | `recursion_limit` in the run config |
+| `_trim()` memory window | `trim_messages` (or a summarisation node) before the agent node |
+| `ctx.outbox` (WhatsApp lists / buttons) | A state field written by tools and sent by a final **respond** node |
+| `remember()` system notes (button taps, payments) | Updating graph state for the thread from outside the graph (`graph.update_state`) |
+| `bk:confirm` / `bk:cod` buttons handled in code | A **human-in-the-loop interrupt** (`interrupt()` before the commit step), resumed by the WhatsApp button webhook |
+| `tool_traces` table + `/api/traces` | LangSmith tracing (or keep the table via a callback) |
+| `OpenAICompatibleLLM` adapter | `ChatOpenAI(base_url=...)` / `ChatGoogleGenerativeAI` / `ChatGroq` |
+
+```python
+# Sketch of the same agent in LangGraph (tools and prompt unchanged)
+from langgraph.graph import StateGraph, MessagesState, START, END
+from langgraph.prebuilt import ToolNode, tools_condition
+
+graph = StateGraph(MessagesState)
+graph.add_node("agent", lambda s: {"messages": [llm.bind_tools(tools).invoke([system, *s["messages"]])]})
+graph.add_node("tools", ToolNode(tools))
+graph.add_edge(START, "agent")
+graph.add_conditional_edges("agent", tools_condition)  # tool calls -> "tools", else END
+graph.add_edge("tools", "agent")
+app = graph.compile(checkpointer=SqliteSaver(conn))     # memory per thread_id = WhatsApp number
+```
+
+**When I'd switch:** multi-agent setups (for example a separate travel planner and payments agent), long-running
+or resumable workflows that wait hours for a user or a webhook, parallel tool branches, or a team that
+standardises on LangSmith for tracing and evals.
+
 ## Project layout
 ```
 app/
