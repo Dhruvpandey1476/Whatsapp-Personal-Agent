@@ -324,9 +324,8 @@ async def test_voice_note_is_transcribed_echoed_and_sent_to_agent(client, monkey
     await post_webhook(client, payload)
 
     out = [body(x) for x in outbound()]
-    assert out[0] == "🎙️ _kal Delhi se Goa ki sasti flight_"  # transcript echoed first
     assert llm.calls[0]["messages"][-1]["content"] == "kal Delhi se Goa ki sasti flight"
-    assert out[-1] == "Searching flights for you"
+    assert out == ["Searching flights for you"]  # only the answer; the transcript is not echoed back
 
 
 async def test_voice_note_without_stt_key_asks_to_type(client, monkeypatch):

@@ -110,7 +110,7 @@ async def handle_message(db: AsyncSession, contact: Contact, msg: InboundMessage
 
 
 async def _voice_to_text(db: AsyncSession, contact: Contact, msg: InboundMessage) -> str | None:
-    """Voice note -> transcript. The transcript is echoed back so the user can see what was understood."""
+    """Voice note -> transcript, which is then handled exactly like a typed message."""
     media_id = (msg.raw.get("audio") or {}).get("id")
     if not media_id or not settings.stt_key:
         await say(db, contact, text_message("🎙️ Voice notes aren't enabled yet. Please type your request 🙂"))
@@ -124,7 +124,6 @@ async def _voice_to_text(db: AsyncSession, contact: Contact, msg: InboundMessage
     if not text:
         await say(db, contact, text_message("😕 I couldn't catch that voice note. Could you try again or type it?"))
         return None
-    await say(db, contact, text_message(f"🎙️ _{text}_"))
     return text
 
 

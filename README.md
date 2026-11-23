@@ -27,7 +27,7 @@ Agent:  🎉 Payment received: ₹4,280 · PNR: *QKZTRM*
 | 🚆 **Trains** | IRCTC-style search with per-class fares (1A/2A/3A/CC/SL) and live-looking availability or waitlist. Waitlisted classes can't be booked. 10-digit PNR |
 | 🍔 **Food** | Find restaurants by dish or cuisine, veg-only filter, menus, multi-item cart, delivery fee and taxes, saved address. **Pay online or cash on delivery** |
 | 🌐 **Live info** | `web_search` (Tavily if a key is set, otherwise DuckDuckGo → Google News → Wikipedia), `read_webpage` (public URLs only), `get_weather` (Open-Meteo, any city) |
-| 🎙️ **Voice notes** | Send a WhatsApp voice note in English, Hindi or Hinglish. It's downloaded from Meta, transcribed with **Groq Whisper** (`whisper-large-v3-turbo`), echoed back so you can see what was understood, then handled like a typed message |
+| 🎙️ **Voice notes** | Send a WhatsApp voice note in English, Hindi or Hinglish. It's downloaded from Meta, transcribed with **Groq Whisper** (`whisper-large-v3-turbo`), then handled exactly like a typed message |
 | 💬 **General chat** | Answers any question and gives advice and recommendations. For things it can't book (hotels, cabs, movie tickets) it searches and shares links |
 | 🧠 **Memory** | Long-term **profile** (name, age, gender, address, preferences) saved automatically, so "book the same for me" works. Short-term chat history per user |
 | 📋 **Manage** | "show my bookings", "cancel FL-7K2Q9A" (refund shown). Paid food orders can't be cancelled |
