@@ -10,6 +10,7 @@ This module converts it to the OpenAI wire format on the way out and normalises 
 import asyncio
 import json
 import logging
+import re
 import uuid
 from typing import Any
 
@@ -21,7 +22,7 @@ log = logging.getLogger(__name__)
 
 PROVIDERS = {
     "gemini": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai", "model": "gemini-3-flash-preview"},
-    "groq": {"base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile"},
+    "groq": {"base_url": "https://api.groq.com/openai/v1", "model": "qwen/qwen3.8-27b"},
     "openrouter": {"base_url": "https://openrouter.ai/api/v1", "model": "google/gemini-2.5-flash"},
 }
 RETRYABLE = {429, 500, 502, 503, 504}
@@ -97,8 +98,10 @@ def from_openai_response(data: dict) -> dict:
     except (KeyError, IndexError, TypeError) as exc:
         raise LLMError(f"Unexpected LLM response: {str(data)[:300]}") from exc
     blocks: list[dict] = []
-    if msg.get("content"):
-        blocks.append({"type": "text", "text": msg["content"]})
+    # Reasoning models (Qwen 3, DeepSeek R1...) may inline their hidden reasoning; never show it to the user.
+    content = re.sub(r"(?s)<think>.*?(</think>|$)", "", msg.get("content") or "").strip()
+    if content:
+        blocks.append({"type": "text", "text": content})
     for call in msg.get("tool_calls") or []:
         fn = call.get("function") or {}
         try:

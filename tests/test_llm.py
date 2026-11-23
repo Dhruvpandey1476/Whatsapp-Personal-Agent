@@ -125,3 +125,11 @@ async def test_fallback_to_a_different_provider(monkeypatch):
     out = await main.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])
     assert out["content"][0]["text"] == "from gemini"
     assert "groq" in urls[0] and "generativelanguage" in urls[-1]
+
+
+def test_reasoning_is_never_shown():
+    from app.agent.llm import from_openai_response
+
+    out = from_openai_response({"choices": [{"message": {"content": "<think>user wants Goa</think>Here you go!"}}]})
+    assert out["content"] == [{"type": "text", "text": "Here you go!"}]
+    assert from_openai_response({"choices": [{"message": {"content": "<think>unfinished"}}]})["content"] == []
