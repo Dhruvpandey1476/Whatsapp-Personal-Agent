@@ -14,9 +14,9 @@ from app.agent.llm import Unavailable
 from app.agent.tools import ToolContext
 from app.config import settings
 from app.models import Contact
-from app.services import bookings, voice
+from app.services import bookings, tts, voice
 from app.services.messaging import get_client, send_message
-from app.whatsapp.client import buttons_message, cta_url_message, text_message
+from app.whatsapp.client import audio_message, buttons_message, cta_url_message, text_message
 from app.whatsapp.parser import InboundMessage
 
 log = logging.getLogger(__name__)
@@ -71,6 +71,11 @@ async def handle_message(db: AsyncSession, contact: Contact, msg: InboundMessage
         text = await _voice_to_text(db, contact, msg)
         if not text:
             return
+        if settings.tts_active:
+            # The answer will be spoken, so ask for a short, natural, listenable reply.
+            text += ("\n\n[voice note: your reply will be read aloud as a voice message. Keep it short and "
+                     "conversational (2-4 sentences), no links, lists, emojis or formatting; say prices in words "
+                     "like '3,890 rupees'. Tappable lists and buttons are still shown as usual.]")
     else:
         await say(db, contact, text_message("I can only read text messages for now. Please type what you need 🙂"))
         return
@@ -103,10 +108,25 @@ async def handle_message(db: AsyncSession, contact: Contact, msg: InboundMessage
         return
 
     if reply:
-        for part in _chunks(to_whatsapp(reply)):
-            await say(db, contact, text_message(part))
+        if msg.type == "audio" and settings.tts_active and await _say_voice(db, contact, reply):
+            pass  # answered with a voice note
+        else:
+            for part in _chunks(to_whatsapp(reply)):
+                await say(db, contact, text_message(part))
     for interactive in ctx.outbox:
         await say(db, contact, interactive)
+
+
+async def _say_voice(db: AsyncSession, contact: Contact, reply: str) -> bool:
+    """Speak the reply as a WhatsApp voice note. Returns False on any failure so the caller sends text instead."""
+    try:
+        ogg = await tts.synthesize(reply)
+        media_id = await get_client().upload_media(ogg, "audio/ogg", "reply.ogg")
+        await say(db, contact, {**audio_message(media_id), "_transcript": f"[voice] {to_whatsapp(reply)}"})
+        return True
+    except Exception:
+        log.exception("voice reply failed for %s, sending text instead", contact.wa_id)
+        return False
 
 
 async def _voice_to_text(db: AsyncSession, contact: Contact, msg: InboundMessage) -> str | None:

@@ -84,7 +84,8 @@ class WhatsAppClient:
 
     async def send(self, to: str, message: dict[str, Any]) -> str | None:
         """Send a message object (the part after `type`, e.g. {"type": "text", "text": {...}})."""
-        payload = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": to, **message}
+        clean = {k: v for k, v in message.items() if not k.startswith("_")}
+        payload = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": to, **clean}
         return self._message_id(await self._post(payload))
 
     async def download_media(self, media_id: str) -> tuple[bytes, str]:
@@ -101,6 +102,19 @@ class WhatsAppClient:
         if media.status_code >= 400:
             raise WhatsAppAPIError(media.status_code, "media download failed")
         return media.content, info.get("mime_type", "audio/ogg")
+
+    async def upload_media(self, content: bytes, mime: str = "audio/ogg", filename: str = "reply.ogg") -> str:
+        """Upload outbound media (e.g. a voice reply) and return its media id for sending."""
+        if self.mock:
+            self.sent.append({"upload": filename, "bytes": len(content)})
+            return f"media.mock.{uuid.uuid4().hex}"
+        headers = {"Authorization": f"Bearer {self.cfg.whatsapp_access_token}"}
+        url = f"{GRAPH_BASE}/{self.cfg.whatsapp_api_version}/{self.cfg.whatsapp_phone_number_id}/media"
+        resp = await self._http.post(url, headers=headers, data={"messaging_product": "whatsapp", "type": mime},
+                                     files={"file": (filename, content, mime)})  # fmt: skip
+        if resp.status_code >= 400:
+            raise WhatsAppAPIError(resp.status_code, resp.text[:200])
+        return resp.json()["id"]
 
     async def mark_read(self, wa_message_id: str) -> None:
         try:
@@ -174,6 +188,11 @@ def cta_url_message(body: str, display_text: str, url: str, footer: str | None =
     return {"type": "interactive", "interactive": interactive}
 
 
+def audio_message(media_id: str) -> dict[str, Any]:
+    """An uploaded OGG/Opus file shows in WhatsApp as a voice note."""
+    return {"type": "audio", "audio": {"id": media_id}}
+
+
 def template_message(name: str, language: str, components: list | None = None) -> dict[str, Any]:
     template: dict[str, Any] = {"name": name, "language": {"code": language}}
     if components:
@@ -190,4 +209,6 @@ def describe(message: dict[str, Any]) -> str:
         return message["interactive"]["body"]["text"]
     if t == "template":
         return f"[template:{message['template']['name']}]"
+    if t == "audio":
+        return message.get("_transcript") or "[voice reply]"
     return f"[{t}]"

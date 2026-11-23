@@ -346,3 +346,86 @@ def test_postgres_urls_are_made_async():
     assert async_url("postgres://u:p@h:5432/db") == "postgresql+asyncpg://u:p@h:5432/db"
     assert async_url("postgresql://u:p@h/db") == "postgresql+asyncpg://u:p@h/db"
     assert async_url("sqlite+aiosqlite:///./agent.db") == "sqlite+aiosqlite:///./agent.db"
+
+
+def _voice_payload(media_id="MEDIA1"):
+    payload = text_payload("x")
+    m = payload["entry"][0]["changes"][0]["value"]["messages"][0]
+    m.pop("text"), m.update(type="audio", audio={"id": media_id, "mime_type": "audio/ogg; codecs=opus", "voice": True})
+    return payload
+
+
+def _voice_setup(monkeypatch, transcript="kal Goa ki flight"):
+    from app.agent import engine
+    from app.config import settings
+    from app.services.messaging import get_client
+
+    async def fake_download(media_id):
+        return b"OggS-in", "audio/ogg"
+
+    async def fake_transcribe(audio, mime):
+        return transcript
+
+    monkeypatch.setattr(settings, "stt_api_key", "test")
+    monkeypatch.setattr(get_client(), "download_media", fake_download)
+    monkeypatch.setattr(engine.voice, "transcribe", fake_transcribe)
+    return engine, settings
+
+
+async def test_voice_in_voice_out(client, monkeypatch):
+    engine, settings = _voice_setup(monkeypatch)
+    monkeypatch.setattr(settings, "tts_api_key", "test")
+    monkeypatch.setattr(settings, "tts_enabled", True)
+    spoken = []
+
+    async def fake_synth(text):
+        spoken.append(text)
+        return b"OggS-reply"
+
+    monkeypatch.setattr(engine.tts, "synthesize", fake_synth)
+    llm = ScriptedLLM(say("IndiGo at 6:10 for 3,890 rupees. Shall I book it?"))
+    set_llm(llm)
+    await post_webhook(client, _voice_payload())
+
+    sent = outbound()
+    assert [m["type"] for m in sent] == ["audio"]  # voice only, no duplicate text
+    assert sent[0]["audio"]["id"].startswith("media.mock.") and "_transcript" not in sent[0]
+    assert spoken == ["IndiGo at 6:10 for 3,890 rupees. Shall I book it?"]
+    assert "read aloud" in llm.calls[0]["messages"][-1]["content"]  # agent told to keep it listenable
+
+
+async def test_voice_reply_falls_back_to_text(client, monkeypatch):
+    engine, settings = _voice_setup(monkeypatch)
+    monkeypatch.setattr(settings, "tts_api_key", "test")
+    monkeypatch.setattr(settings, "tts_enabled", True)
+
+    async def broken_synth(text):
+        raise RuntimeError("quota exceeded")
+
+    monkeypatch.setattr(engine.tts, "synthesize", broken_synth)
+    set_llm(ScriptedLLM(say("Here are your flights")))
+    await post_webhook(client, _voice_payload())
+    assert [m["type"] for m in outbound()] == ["text"] and body(last_out()) == "Here are your flights"
+
+
+async def test_typed_message_never_gets_voice(client, monkeypatch):
+    from app.agent import engine
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "tts_api_key", "test")
+    monkeypatch.setattr(settings, "tts_enabled", True)
+
+    async def must_not_run(text):
+        raise AssertionError("TTS used for a typed message")
+
+    monkeypatch.setattr(engine.tts, "synthesize", must_not_run)
+    set_llm(ScriptedLLM(say("Hello!")))
+    await post_webhook(client, text_payload("hello there"))
+    assert [m["type"] for m in outbound()] == ["text"]
+
+
+def test_speakable_text():
+    from app.services.tts import speakable
+
+    out = speakable("*IndiGo* ✈️ ₹3,890\n• Book: https://x.com/pay/abc")
+    assert out == "IndiGo rupees 3,890\nBook:"

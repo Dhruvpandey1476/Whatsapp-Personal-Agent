@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     stt_api_key: str = ""  # defaults to the Groq key used for the LLM / fallback
     stt_model: str = "whisper-large-v3-turbo"
 
+    # --- Voice replies (text-to-speech): when the user sends a voice note, answer with a voice note
+    tts_enabled: bool = True
+    tts_model: str = "gemini-3.8-flash-tts"  # Gemini TTS speaks Hindi, English and Hinglish
+    tts_voice: str = "Kore"
+    tts_api_key: str = ""  # defaults to the Gemini key (main or fallback)
+    ffmpeg_path: str = "ffmpeg"  # converts speech to WhatsApp voice-note format (OGG/Opus)
+
     tavily_api_key: str = ""  # optional: best web search (tavily.com free tier); falls back to free sources
 
     # --- Guardrails / payments
@@ -73,6 +80,20 @@ class Settings(BaseSettings):
         if self.llm_fallback_provider == "groq":
             return self.llm_fallback_api_key
         return ""
+
+    @property
+    def tts_key(self) -> str:
+        if self.tts_api_key:
+            return self.tts_api_key
+        if self.llm_provider == "gemini":
+            return self.llm_api_key
+        if self.llm_fallback_provider == "gemini":
+            return self.llm_fallback_api_key
+        return ""
+
+    @property
+    def tts_active(self) -> bool:
+        return self.tts_enabled and bool(self.tts_key)
 
     @property
     def llm_active(self) -> bool:

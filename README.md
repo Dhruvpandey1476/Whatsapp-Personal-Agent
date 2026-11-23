@@ -27,7 +27,7 @@ Agent:  🎉 Payment received: ₹4,280 · PNR: *QKZTRM*
 | 🚆 **Trains** | IRCTC-style search with per-class fares (1A/2A/3A/CC/SL) and live-looking availability or waitlist. Waitlisted classes can't be booked. 10-digit PNR |
 | 🍔 **Food** | Find restaurants by dish or cuisine, veg-only filter, menus, multi-item cart, delivery fee and taxes, saved address. **Pay online or cash on delivery** |
 | 🌐 **Live info** | `web_search` (Tavily if a key is set, otherwise DuckDuckGo → Google News → Wikipedia), `read_webpage` (public URLs only), `get_weather` (Open-Meteo, any city) |
-| 🎙️ **Voice notes** | Send a WhatsApp voice note in English, Hindi or Hinglish. It's downloaded from Meta, transcribed with **Groq Whisper** (`whisper-large-v3-turbo`), then handled exactly like a typed message |
+| 🎙️ **Voice notes** | Send a WhatsApp voice note in English, Hindi or Hinglish. It's downloaded from Meta, transcribed with **Groq Whisper** (`whisper-large-v3-turbo`), then handled exactly like a typed message. **Voice in, voice out:** the answer comes back as a WhatsApp voice note, spoken by **Gemini TTS** (natural Hindi, English and Hinglish) and converted to OGG/Opus with ffmpeg. Typed messages get text; if speech fails, it falls back to text |
 | 💬 **General chat** | Answers any question and gives advice and recommendations. For things it can't book (hotels, cabs, movie tickets) it searches and shares links |
 | 🧠 **Memory** | Long-term **profile** (name, age, gender, address, preferences) saved automatically, so "book the same for me" works. Short-term chat history per user |
 | 📋 **Manage** | "show my bookings", "cancel FL-7K2Q9A" (refund shown). Paid food orders can't be cancelled |
@@ -89,7 +89,7 @@ Every tool call is stored in `tool_traces` (input, output, error, latency):
 | Food | Mock | ONDC buyer app or a restaurant partner API |
 | Payment | Test checkout page + cash on delivery (food) | Swap for a Razorpay Payment Link and call `mark_paid` from its signed webhook |
 | Web search, page reading, weather | **Real, live** | Add `TAVILY_API_KEY` for the best search quality |
-| Voice notes (speech-to-text) | **Real** (Groq Whisper) | — |
+| Voice notes in and out | **Real** (Groq Whisper speech-to-text, Gemini text-to-speech) | — |
 | Hosting | **Real** (Docker on Render + Postgres, auto-deploy on push) | Paid instance to avoid free-plan sleep |
 
 Each provider sits behind an interface (`app/providers/base.py`), so going live means writing **one class**.

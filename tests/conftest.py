@@ -21,6 +21,8 @@ os.environ.update(
     LLM_FALLBACK_MODEL="",
     LLM_FALLBACK_API_KEY="",
     STT_API_KEY="",
+    TTS_API_KEY="",
+    TTS_ENABLED="false",
     LLM_MODEL="",
     LLM_BASE_URL="",
     MAX_ORDER_AMOUNT="25000",
