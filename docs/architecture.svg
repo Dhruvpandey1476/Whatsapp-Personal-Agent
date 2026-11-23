@@ -26,7 +26,7 @@
 
   <!-- Title -->
   <text x="40" y="44" font-size="26" font-weight="800" fill="#0f172a">WhatsApp Personal AI Agent: system architecture</text>
-  <text x="40" y="70" class="s">Text or 🎙️ voice notes · flights (domestic + international) · trains · food (online / cash on delivery) · live web search &amp; weather · general chat. The LLM can prepare, but never confirm or pay.</text>
+  <text x="40" y="70" class="s">Text or 🎙️ voice (voice in → voice out) · flights (domestic + international) · trains · food (online / cash on delivery) · live web search &amp; weather · general chat. The LLM can prepare, but never confirm or pay.</text>
 
   <!-- ============ Column A/B: user + Meta ============ -->
   <rect x="40" y="140" width="180" height="110" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
@@ -58,12 +58,12 @@
   <rect x="570" y="270" width="200" height="70" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="1.6"/>
   <text x="670" y="296" text-anchor="middle" class="t">Messaging service</text>
   <text x="670" y="316" text-anchor="middle" class="xs">24h window · persist · retries</text>
-  <text x="670" y="331" text-anchor="middle" class="xs">sent → delivered → read</text>
+  <text x="670" y="331" text-anchor="middle" class="xs">text · lists · buttons · voice notes</text>
 
   <rect x="840" y="270" width="310" height="70" rx="10" fill="#e0e7ff" stroke="#4f46e5" stroke-width="1.6"/>
   <text x="995" y="292" text-anchor="middle" class="t">Engine (router)</text>
   <text x="995" y="311" text-anchor="middle" class="s">button taps → code · text → agent</text>
-  <text x="995" y="329" text-anchor="middle" class="xs">🎙️ voice note → Groq Whisper → text → agent</text>
+  <text x="995" y="329" text-anchor="middle" class="xs">🎙️ in: Whisper → text · out: Gemini TTS → voice note</text>
 
   <rect x="570" y="390" width="230" height="90" rx="10" fill="#ffedd5" stroke="#c2410c" stroke-width="1.8"/>
   <text x="685" y="416" text-anchor="middle" class="t">Button handler</text>
@@ -102,7 +102,7 @@
   <text x="1400" y="152" text-anchor="middle" class="s">Groq (qwen3.8-27b) → fallback Gemini</text>
   <text x="1400" y="172" text-anchor="middle" class="xs">any of Gemini · Groq · OpenRouter via .env</text>
   <text x="1400" y="188" text-anchor="middle" class="xs">cross-provider fallback on 429 / 5xx / timeout</text>
-  <text x="1400" y="204" text-anchor="middle" class="xs">+ Whisper speech-to-text for voice notes</text>
+  <text x="1400" y="204" text-anchor="middle" class="xs">+ Whisper (voice in) · Gemini TTS + ffmpeg (voice out)</text>
 
   <rect x="1240" y="240" width="320" height="290" rx="14" fill="#faf5ff" stroke="#7c3aed" stroke-width="2"/>
   <text x="1400" y="264" text-anchor="middle" class="t">🔧 Tools (function calling)</text>
@@ -200,7 +200,7 @@
   <text x="58" y="482" class="s">6  LLM (Groq, Gemini fallback) reasons, picks tools</text>
   <text x="58" y="504" class="s">7  Tools search flights / web / weather / memory</text>
   <text x="58" y="526" class="s">8  prepare_booking creates a DRAFT + Confirm buttons</text>
-  <text x="58" y="548" class="s">9  Reply, tappable list and buttons sent to WhatsApp</text>
+  <text x="58" y="548" class="s">9  Reply (voice note if user spoke) + lists, buttons</text>
   <text x="58" y="570" class="s">10 User taps Confirm, opens the link and pays (or COD)</text>
   <text x="58" y="596" class="xs">→ receipt with PNR / order id arrives on WhatsApp; agent</text>
   <text x="58" y="611" class="xs">   memory is updated so the next turn knows it's paid</text>
@@ -240,6 +240,6 @@
     <line x1="220" y1="0" x2="260" y2="0" class="ai"/><text x="268" y="4" class="xs">AI reasoning &amp; tool calls</text>
     <line x1="460" y1="0" x2="500" y2="0" class="money"/><text x="508" y="4" class="xs">money path (deterministic code + user action)</text>
     <line x1="800" y1="0" x2="840" y2="0" class="data"/><text x="848" y="4" class="xs">persistence</text>
-    <text x="1000" y="4" class="xs">Python 3.12 · FastAPI · SQLAlchemy 2 · Docker on Render · Postgres · 33 tests</text>
+    <text x="1000" y="4" class="xs">Python 3.12 · FastAPI · SQLAlchemy 2 · Docker on Render · Postgres · 37 tests</text>
   </g>
 </svg>
