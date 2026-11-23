@@ -27,6 +27,7 @@ Agent:  🎉 Payment received: ₹4,280 · PNR: *QKZTRM*
 | 🚆 **Trains** | IRCTC-style search with per-class fares (1A/2A/3A/CC/SL) and live-looking availability or waitlist. Waitlisted classes can't be booked. 10-digit PNR |
 | 🍔 **Food** | Find restaurants by dish or cuisine, veg-only filter, menus, multi-item cart, delivery fee and taxes, saved address. **Pay online or cash on delivery** |
 | 🌐 **Live info** | `web_search` (Tavily if a key is set, otherwise DuckDuckGo → Google News → Wikipedia), `read_webpage` (public URLs only), `get_weather` (Open-Meteo, any city) |
+| 🎙️ **Voice notes** | Send a WhatsApp voice note in English, Hindi or Hinglish. It's downloaded from Meta, transcribed with **Groq Whisper** (`whisper-large-v3-turbo`), echoed back so you can see what was understood, then handled like a typed message |
 | 💬 **General chat** | Answers any question and gives advice and recommendations. For things it can't book (hotels, cabs, movie tickets) it searches and shares links |
 | 🧠 **Memory** | Long-term **profile** (name, age, gender, address, preferences) saved automatically, so "book the same for me" works. Short-term chat history per user |
 | 📋 **Manage** | "show my bookings", "cancel FL-7K2Q9A" (refund shown). Paid food orders can't be cancelled |
@@ -122,11 +123,32 @@ All three providers expose an OpenAI-compatible API, so a single adapter (`app/a
 | `LLM_PROVIDER` | Get a key | Default `LLM_MODEL` |
 |---|---|---|
 | `gemini` | aistudio.google.com/apikey (free tier) | `gemini-3-flash-preview` |
-| `groq` | console.groq.com/keys (free tier, very fast) | `llama-3.3-70b-versatile` |
+| `groq` | console.groq.com/keys (free tier, very fast; also powers voice notes) | `llama-3.3-70b-versatile` |
 | `openrouter` | openrouter.ai/keys (any model) | `google/gemini-2.5-flash` |
 
 Set `LLM_MODEL` to use any other tool-calling model from that provider. Set `LLM_BASE_URL` to point at another
 OpenAI-compatible endpoint (for example a local Ollama).
+
+**Cross-provider fallback:** if the main model times out, is overloaded (5xx) or is rate-limited, the agent retries
+once and then answers with the fallback. That can be another model on the same provider (`LLM_FALLBACK_MODEL`) or a
+**different provider** (`LLM_FALLBACK_PROVIDER` + `LLM_FALLBACK_API_KEY`). The recommended setup is **Groq as the main
+model and Gemini as the fallback**, so one provider's outage doesn't take the bot down.
+
+## Deploy to the cloud (Render, free)
+The repo includes a `Dockerfile` (it honours `$PORT`) and a `render.yaml` Blueprint that creates the web service plus
+a free Postgres database. SQLite is used locally; `postgres://` URLs are converted to async automatically.
+
+1. On render.com: **New + → Blueprint →** connect this GitHub repo. Render reads `render.yaml`.
+2. Fill in the secret values it asks for: the WhatsApp token, phone number ID, WABA ID, app secret and verify token,
+   plus `LLM_API_KEY` (Groq), `LLM_FALLBACK_API_KEY` (Gemini) and `TAVILY_API_KEY`.
+3. After the deploy, open `https://<service>.onrender.com/health`. `PUBLIC_BASE_URL` comes from Render's
+   `RENDER_EXTERNAL_URL` automatically, so payment links just work.
+4. In Meta, set the webhook URL to `https://<service>.onrender.com/webhook` with your verify token. It's a fixed URL,
+   so you only do this once.
+5. The free plan sleeps after 15 minutes idle, and the first message after that takes about 30–50 seconds. A free
+   uptime monitor pinging `/health` every 10 minutes keeps it awake.
+
+Use a **permanent System User token** in production. The temporary token from API Setup expires within a day.
 
 ## Why no agent framework (and how this maps to LangGraph)
 
@@ -186,5 +208,5 @@ scripts/simulate.py · tests/
 ```
 
 ## Next steps
-Real providers (above) · voice notes via speech-to-text · price-drop alerts (a background job plus an approved template
-message) · round trips and multi-city · Redis lock and a queue for multi-instance scale · Postgres.
+Real providers (above) · price-drop alerts (a background job plus an approved template
+message) · round trips and multi-city · Redis lock and a queue for multi-instance scale · voice replies (text-to-speech) · image understanding (send a photo of a ticket or menu).

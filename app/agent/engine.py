@@ -14,8 +14,8 @@ from app.agent.llm import Unavailable
 from app.agent.tools import ToolContext
 from app.config import settings
 from app.models import Contact
-from app.services import bookings
-from app.services.messaging import send_message
+from app.services import bookings, voice
+from app.services.messaging import get_client, send_message
 from app.whatsapp.client import buttons_message, cta_url_message, text_message
 from app.whatsapp.parser import InboundMessage
 
@@ -27,6 +27,7 @@ WELCOME = (
     "✈️ _Cheapest flight Delhi to Goa next Friday evening_\n"
     "🚆 _3A train Mumbai to Pune tomorrow_\n"
     "🍔 _Order a veg biryani_\n\n"
+    "🎙️ You can also send a *voice note*, in English or Hindi.\n\n"
     "I'll find options, you tap to choose, confirm and pay. Type *help* anytime, *reset* to clear our chat."
 )
 
@@ -66,6 +67,10 @@ async def handle_message(db: AsyncSession, contact: Contact, msg: InboundMessage
         text = f"Show me the menu of {msg.text} (restaurant_id {msg.reply_id[5:]})"
     elif msg.type == "text" and msg.text:
         text = msg.text.strip()
+    elif msg.type == "audio":
+        text = await _voice_to_text(db, contact, msg)
+        if not text:
+            return
     else:
         await say(db, contact, text_message("I can only read text messages for now. Please type what you need 🙂"))
         return
@@ -102,6 +107,25 @@ async def handle_message(db: AsyncSession, contact: Contact, msg: InboundMessage
             await say(db, contact, text_message(part))
     for interactive in ctx.outbox:
         await say(db, contact, interactive)
+
+
+async def _voice_to_text(db: AsyncSession, contact: Contact, msg: InboundMessage) -> str | None:
+    """Voice note -> transcript. The transcript is echoed back so the user can see what was understood."""
+    media_id = (msg.raw.get("audio") or {}).get("id")
+    if not media_id or not settings.stt_key:
+        await say(db, contact, text_message("🎙️ Voice notes aren't enabled yet. Please type your request 🙂"))
+        return None
+    try:
+        audio, mime = await get_client().download_media(media_id)
+        text = (await voice.transcribe(audio, mime)).strip()
+    except Exception:
+        log.exception("voice note failed for %s", contact.wa_id)
+        text = ""
+    if not text:
+        await say(db, contact, text_message("😕 I couldn't catch that voice note. Could you try again or type it?"))
+        return None
+    await say(db, contact, text_message(f"🎙️ _{text}_"))
+    return text
 
 
 async def _booking_button(ctx: ToolContext, reply_id: str) -> None:

@@ -6,7 +6,15 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 
-engine = create_async_engine(settings.database_url, echo=False)
+def async_url(url: str) -> str:
+    """Hosting platforms hand out postgres://... URLs; SQLAlchemy async needs postgresql+asyncpg://..."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+asyncpg://" + url[len(prefix):]
+    return url
+
+
+engine = create_async_engine(async_url(settings.database_url), echo=False, pool_pre_ping=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 

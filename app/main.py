@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
         settings.app_name,
         "MOCK" if settings.mock_whatsapp else "LIVE",
         f"{settings.llm_provider}:{settings.llm_model or 'default'}" if settings.llm_active else "DISABLED (no LLM_API_KEY)",
-        settings.public_base_url,
+        settings.public_url,
     )
     yield
     await get_client().aclose()

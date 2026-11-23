@@ -114,27 +114,44 @@ def from_openai_response(data: dict) -> dict:
 
 
 class OpenAICompatibleLLM:
-    def __init__(self, provider: str | None = None, http: httpx.AsyncClient | None = None) -> None:
+    def __init__(self, provider: str | None = None, http: httpx.AsyncClient | None = None, *,
+                 api_key: str | None = None, model: str | None = None, base_url: str | None = None) -> None:  # fmt: skip
         self.provider = (provider or settings.llm_provider).lower()
         if self.provider not in PROVIDERS:
             raise ValueError(f"LLM_PROVIDER must be one of {', '.join(PROVIDERS)}")
         preset = PROVIDERS[self.provider]
-        self.base_url = (settings.llm_base_url or preset["base_url"]).rstrip("/")
-        self.model = settings.llm_model or preset["model"]
-        headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+        main = provider is None or self.provider == settings.llm_provider
+        self.base_url = (base_url or (settings.llm_base_url if main else "") or preset["base_url"]).rstrip("/")
+        self.model = model or (settings.llm_model if main else "") or preset["model"]
+        headers = {"Authorization": f"Bearer {api_key or settings.llm_api_key}"}
         if self.provider == "openrouter":
             headers["X-Title"] = settings.app_name
         self.http = http or httpx.AsyncClient(timeout=25, headers=headers)
+        self._fallback: "OpenAICompatibleLLM | None" = None
+
+    def fallback(self) -> "tuple[OpenAICompatibleLLM, str] | None":
+        """Second chance when the main model is down: another provider (e.g. Groq -> Gemini) or another model."""
+        fp = settings.llm_fallback_provider.lower()
+        if fp and fp != self.provider:
+            if self._fallback is None:
+                self._fallback = OpenAICompatibleLLM(
+                    fp, api_key=settings.llm_fallback_api_key or settings.llm_api_key,
+                    model=settings.llm_fallback_model or None)  # fmt: skip
+            return self._fallback, self._fallback.model
+        if settings.llm_fallback_model and settings.llm_fallback_model != self.model:
+            return self, settings.llm_fallback_model
+        return None
 
     async def create(self, *, system: str, tools: list[dict], messages: list[dict]) -> dict:
         try:
             return await self._create(self.model, system, tools, messages)
         except Unavailable as exc:
-            fallback = settings.llm_fallback_model
-            if not fallback or fallback == self.model:
+            fb = self.fallback()
+            if fb is None:
                 raise
-            log.warning("%s unavailable (%s), falling back to %s", self.model, exc, fallback)
-            return await self._create(fallback, system, tools, messages)
+            client, model = fb
+            log.warning("%s unavailable (%s), falling back to %s:%s", self.model, exc, client.provider, model)
+            return await client._create(model, system, tools, messages)
 
     async def _create(self, model: str, system: str, tools: list[dict], messages: list[dict]) -> dict:
         payload = {

@@ -298,3 +298,52 @@ def test_markdown_links_are_made_whatsapp_friendly():
                       "[IMDb list](https://www.imdb.com/list/ls1)")
     assert out == "See 29 best thrillers and IMDb list: https://www.imdb.com/list/ls1"
     assert "news.google.com" not in to_whatsapp("More: https://news.google.com/rss/articles/abc?oc=5")
+
+
+async def test_voice_note_is_transcribed_echoed_and_sent_to_agent(client, monkeypatch):
+    from app.agent import engine
+    from app.config import settings
+    from app.services.messaging import get_client
+
+    async def fake_download(media_id):
+        assert media_id == "MEDIA123"
+        return b"OggS-fake", "audio/ogg; codecs=opus"
+
+    async def fake_transcribe(audio, mime):
+        return "kal Delhi se Goa ki sasti flight"
+
+    monkeypatch.setattr(settings, "stt_api_key", "test")
+    monkeypatch.setattr(get_client(), "download_media", fake_download)
+    monkeypatch.setattr(engine.voice, "transcribe", fake_transcribe)
+    llm = ScriptedLLM(say("Searching flights for you"))
+    set_llm(llm)
+
+    payload = text_payload("x")
+    m = payload["entry"][0]["changes"][0]["value"]["messages"][0]
+    m.pop("text"), m.update(type="audio", audio={"id": "MEDIA123", "mime_type": "audio/ogg; codecs=opus", "voice": True})
+    await post_webhook(client, payload)
+
+    out = [body(x) for x in outbound()]
+    assert out[0] == "🎙️ _kal Delhi se Goa ki sasti flight_"  # transcript echoed first
+    assert llm.calls[0]["messages"][-1]["content"] == "kal Delhi se Goa ki sasti flight"
+    assert out[-1] == "Searching flights for you"
+
+
+async def test_voice_note_without_stt_key_asks_to_type(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "stt_api_key", "")
+    set_llm(ScriptedLLM())  # must not be called
+    payload = text_payload("x")
+    m = payload["entry"][0]["changes"][0]["value"]["messages"][0]
+    m.pop("text"), m.update(type="audio", audio={"id": "M1"})
+    await post_webhook(client, payload)
+    assert "type your request" in body(last_out())
+
+
+def test_postgres_urls_are_made_async():
+    from app.db import async_url
+
+    assert async_url("postgres://u:p@h:5432/db") == "postgresql+asyncpg://u:p@h:5432/db"
+    assert async_url("postgresql://u:p@h/db") == "postgresql+asyncpg://u:p@h/db"
+    assert async_url("sqlite+aiosqlite:///./agent.db") == "sqlite+aiosqlite:///./agent.db"

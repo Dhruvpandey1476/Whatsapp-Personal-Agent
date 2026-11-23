@@ -26,7 +26,7 @@ def _code(n: int, alphabet: str = ALNUM) -> str:
 
 
 def payment_url(b: Booking) -> str:
-    return f"{settings.public_base_url.rstrip('/')}/pay/{b.pay_token}"
+    return f"{settings.public_url}/pay/{b.pay_token}"
 
 
 async def create_pending(db: AsyncSession, contact: Contact, kind: str, title: str, details: dict, amount: int) -> Booking:

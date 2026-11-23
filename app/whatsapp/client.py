@@ -87,6 +87,21 @@ class WhatsAppClient:
         payload = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": to, **message}
         return self._message_id(await self._post(payload))
 
+    async def download_media(self, media_id: str) -> tuple[bytes, str]:
+        """Inbound media (voice notes, images): resolve the media id to a short-lived URL, then fetch the bytes.
+        Both calls need the access token. Returns (content, mime_type)."""
+        if self.mock:
+            raise WhatsAppAPIError(0, "media download is not available in mock mode")
+        headers = {"Authorization": f"Bearer {self.cfg.whatsapp_access_token}"}
+        meta = await self._http.get(f"{GRAPH_BASE}/{self.cfg.whatsapp_api_version}/{media_id}", headers=headers)
+        if meta.status_code >= 400:
+            raise WhatsAppAPIError(meta.status_code, meta.text[:200])
+        info = meta.json()
+        media = await self._http.get(info["url"], headers=headers, follow_redirects=True)
+        if media.status_code >= 400:
+            raise WhatsAppAPIError(media.status_code, "media download failed")
+        return media.content, info.get("mime_type", "audio/ogg")
+
     async def mark_read(self, wa_message_id: str) -> None:
         try:
             await self._post({"messaging_product": "whatsapp", "status": "read", "message_id": wa_message_id})

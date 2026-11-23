@@ -101,3 +101,27 @@ async def test_timeout_falls_back_to_second_model(monkeypatch):
     out = await llm.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])
     assert out["content"][0]["text"] == "ok"
     assert calls.count("small-model") == 1 and len(calls) == 3  # 2 tries on the hung model, then fallback
+
+
+async def test_fallback_to_a_different_provider(monkeypatch):
+    from app.agent import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.settings, "llm_fallback_provider", "gemini")
+    monkeypatch.setattr(llm_mod.settings, "llm_fallback_model", "gemini-flash-lite-latest")
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(llm_mod.asyncio, "sleep", lambda s: real_sleep(0))
+    urls = []
+
+    def handler(req):
+        urls.append(str(req.url))
+        if "groq" in str(req.url):
+            return httpx.Response(503, json={"error": "overloaded"})
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": "from gemini"}}]})
+
+    transport = httpx.MockTransport(handler)
+    main = OpenAICompatibleLLM("groq", http=httpx.AsyncClient(transport=transport))
+    main._fallback = OpenAICompatibleLLM("gemini", http=httpx.AsyncClient(transport=transport),
+                                         model="gemini-flash-lite-latest")  # fmt: skip
+    out = await main.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])
+    assert out["content"][0]["text"] == "from gemini"
+    assert "groq" in urls[0] and "generativelanguage" in urls[-1]
