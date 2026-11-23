@@ -89,6 +89,8 @@ Every tool call is stored in `tool_traces` (input, output, error, latency):
 | Food | Mock | ONDC buyer app or a restaurant partner API |
 | Payment | Test checkout page + cash on delivery (food) | Swap for a Razorpay Payment Link and call `mark_paid` from its signed webhook |
 | Web search, page reading, weather | **Real, live** | Add `TAVILY_API_KEY` for the best search quality |
+| Voice notes (speech-to-text) | **Real** (Groq Whisper) | — |
+| Hosting | **Real** (Docker on Render + Postgres, auto-deploy on push) | Paid instance to avoid free-plan sleep |
 
 Each provider sits behind an interface (`app/providers/base.py`), so going live means writing **one class**.
 The agent, tools and checkout flow don't change.
