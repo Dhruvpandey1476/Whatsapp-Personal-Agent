@@ -163,3 +163,11 @@ async def test_real_browser_logs_in_with_otp_and_books_after_approval(client, mo
         await browser.close()
         server.should_exit = True
         await serve
+
+
+async def test_without_browser_the_agent_is_told_to_say_so(client):
+    llm = ScriptedLLM(say("The browser agent only runs in the local demo."))
+    set_llm(llm)
+    await post_webhook(client, text_payload("login to skytrip and book a flight"))
+    system = llm.calls[0]["system"]
+    assert "No browser on this server" in system and "browser_open" not in system

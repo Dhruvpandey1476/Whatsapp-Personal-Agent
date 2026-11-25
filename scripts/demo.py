@@ -40,7 +40,7 @@ def need(key: str) -> str:
     return ENV[key]
 
 
-def point_webhook(url: str) -> None:
+def point_webhook(url: str, quiet: bool = False) -> None:
     """Point both Meta webhook settings (app default + WhatsApp-account override) at `url`. Meta verifies it."""
     token, secret = need("WHATSAPP_ACCESS_TOKEN"), need("WHATSAPP_APP_SECRET")
     waba, verify = need("WHATSAPP_BUSINESS_ACCOUNT_ID"), need("WHATSAPP_VERIFY_TOKEN")
@@ -54,7 +54,8 @@ def point_webhook(url: str) -> None:
     r2 = httpx.post(f"{GRAPH}/{waba}/subscribed_apps", timeout=90, headers={"Authorization": f"Bearer {token}"},
                     data={"override_callback_uri": url, "verify_token": verify})  # fmt: skip
     ok = r1.status_code == 200 and r2.status_code == 200
-    print(f"{'✅' if ok else '❌'} Meta webhook -> {url}" + ("" if ok else f"\n   {r1.text[:200]}\n   {r2.text[:200]}"))
+    if not quiet:
+        print(f"{'✅' if ok else '❌'} Meta webhook -> {url}" + ("" if ok else f"\n   {r1.text[:200]}\n   {r2.text[:200]}"))
     if not ok:
         raise RuntimeError("webhook update failed")
 
@@ -104,18 +105,31 @@ def start() -> None:
         env = {**os.environ, "BROWSER_ENABLED": "true", "PUBLIC_BASE_URL": url}
         server = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(PORT)], cwd=ROOT, env=env)
         procs.append(server)
-        for _ in range(60):  # wait until the server is reachable through the tunnel
+        for _ in range(60):  # wait for the server itself (localhost always resolves)
             try:
-                if httpx.get(f"{url}/health", timeout=5).status_code == 200:
+                if httpx.get(f"http://localhost:{PORT}/health", timeout=3).status_code == 200:
                     break
             except httpx.HTTPError:
                 pass
             time.sleep(1)
         else:
-            sys.exit("Server not reachable through the tunnel")
+            sys.exit("The server didn't start. See the errors above.")
 
-        print("3/3 Pointing Meta's webhook at this laptop…")
-        point_webhook(f"{url}/webhook")
+        # Brand-new tunnel names can take a minute or two to resolve, and this PC may cache a failed lookup.
+        # What matters is whether META can reach the tunnel, and Meta verifies it on every webhook update,
+        # so retry the update instead of testing the tunnel from here.
+        print("3/3 Pointing Meta's webhook at this laptop (waiting for the tunnel to go live)…")
+        deadline = time.time() + 180
+        while True:
+            try:
+                point_webhook(f"{url}/webhook", quiet=True)
+                break
+            except RuntimeError:
+                if time.time() > deadline:
+                    sys.exit("Meta couldn't reach the tunnel after 3 minutes. Run demo.py again (a new tunnel is created).")
+                print("    tunnel not reachable yet, retrying in 10s…")
+                time.sleep(10)
+        print(f"✅ Meta webhook -> {url}/webhook")
         switched = True
         print("\n🎬 Demo is LIVE. Message your WhatsApp test number. SkyTrip site:", f"{url}/skytrip")
         print("   Press Ctrl+C to stop and hand WhatsApp back to the cloud server.\n")

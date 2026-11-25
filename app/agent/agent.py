@@ -128,6 +128,14 @@ def _system(ctx: ToolContext, user_text: str = "") -> str:
         from app.agent.browser_tools import browser_prompt
 
         prompt += browser_prompt().replace("{wa_id}", ctx.contact.wa_id or "unknown")
+    else:
+        prompt += (
+            "\n\nNo browser on this server: you can't log in to or click around websites here (e.g. SkyTrip). If the "
+            "user asks you to log in to or operate a website, say clearly that the browser agent runs only in the "
+            "local demo mode, and offer what you can do instead (e.g. the normal flight tools). If they ask you to "
+            "read a page or look something up on Wikipedia, use read_webpage on the article URL "
+            "(e.g. https://en.wikipedia.org/wiki/Third_Battle_of_Panipat) and answer from it."
+        )
     if user_text:
         prompt += f"\n\nThe user's latest message is in {reply_language(user_text)}. Write your whole reply in that."
     return prompt
