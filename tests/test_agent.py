@@ -429,3 +429,17 @@ def test_speakable_text():
 
     out = speakable("*IndiGo* ✈️ ₹3,890\n• Book: https://x.com/pay/abc")
     assert out == "IndiGo rupees 3,890\nBook:"
+
+
+async def test_user_still_gets_apology_when_agent_fails_and_session_is_expired(client, monkeypatch):
+    """Regression (seen on Render/Postgres): after a failure the session is rolled back, which expires the
+    contact; touching it again lazy-loads synchronously -> MissingGreenlet, and the user got no reply at all."""
+    from app.agent import engine
+
+    async def failing_agent(ctx, text):
+        ctx.db.expire(ctx.contact)  # what a rollback does to every loaded object
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(engine, "run_agent", failing_agent)
+    await post_webhook(client, text_payload("what's the weather?"))
+    assert "Something went wrong" in body(last_out())

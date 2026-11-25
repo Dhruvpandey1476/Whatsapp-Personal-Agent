@@ -7,12 +7,14 @@ goes to the LLM agent. Money-moving steps never depend on the model's judgement.
 import logging
 import re
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.agent import remember, run_agent
 from app.agent.llm import Unavailable
 from app.agent.tools import ToolContext
 from app.config import settings
+from app.db import SessionLocal
 from app.models import Contact
 from app.services import bookings, tts, voice
 from app.services.messaging import get_client, send_message
@@ -94,17 +96,16 @@ async def handle_message(db: AsyncSession, contact: Contact, msg: InboundMessage
         await say(db, contact, text_message("⚠️ The AI agent isn't configured yet (LLM_API_KEY missing)."))
         return
 
+    wa_id = contact.wa_id  # read before any rollback can expire the object
     try:
         reply = await run_agent(ctx, text)
     except Unavailable:
-        log.warning("LLM unavailable for %s", contact.wa_id)
-        await db.rollback()
-        await say(db, contact, text_message("⏳ I'm getting a lot of requests right now. Please try again in a minute."))
+        log.warning("LLM unavailable for %s", wa_id)
+        await _apologise(db, wa_id, "⏳ I'm getting a lot of requests right now. Please try again in a minute.")
         return
     except Exception:
-        log.exception("agent failed for %s", contact.wa_id)
-        await db.rollback()
-        await say(db, contact, text_message("😕 Something went wrong on my side. Please try again in a moment."))
+        log.exception("agent failed for %s", wa_id)
+        await _apologise(db, wa_id, "😕 Something went wrong on my side. Please try again in a moment.")
         return
 
     if reply:
@@ -115,6 +116,27 @@ async def handle_message(db: AsyncSession, contact: Contact, msg: InboundMessage
                 await say(db, contact, text_message(part))
     for interactive in ctx.outbox:
         await say(db, contact, interactive)
+
+
+async def _apologise(db: AsyncSession, wa_id: str, text: str) -> None:
+    """Tell the user something failed, even when the session is broken.
+
+    A rollback expires every loaded object; touching one afterwards makes SQLAlchemy lazy-load it synchronously,
+    which async drivers (asyncpg on Postgres) reject with MissingGreenlet. So reload explicitly, and if the
+    connection itself is gone, use a brand-new session."""
+    try:
+        await db.rollback()
+        contact = await db.scalar(select(Contact).where(Contact.wa_id == wa_id))
+        await say(db, contact, text_message(text))
+        return
+    except Exception:
+        log.exception("apology via current session failed for %s, retrying with a fresh session", wa_id)
+    try:
+        async with SessionLocal() as fresh:
+            contact = await fresh.scalar(select(Contact).where(Contact.wa_id == wa_id))
+            await say(fresh, contact, text_message(text))
+    except Exception:
+        log.exception("could not tell %s about the failure", wa_id)
 
 
 async def _say_voice(db: AsyncSession, contact: Contact, reply: str) -> bool:
