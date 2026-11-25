@@ -4,16 +4,18 @@
 - Logins persist: cookies are saved per user to disk (BROWSER_STATE_DIR) and restored, so a site needs one OTP.
 - The page is given to the LLM as compact text plus numbered interactive elements ([3] button "Send code").
 - Safety, enforced here in code (not left to the LLM):
-  * only hosts in BROWSER_ALLOWED_HOSTS can be opened or navigated to;
+  * any public website ("*"), but never local / private-network addresses except the listed demo hosts;
   * password fields are never filled (log in with OTP instead);
   * clicks on final actions (book / pay / confirm / place order...) are NOT performed: they become a pending
     approval that only the user's WhatsApp "Approve" tap can execute.
 """
 
 import asyncio
+import ipaddress
 import logging
 import re
 import secrets
+import socket
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -55,11 +57,37 @@ class BrowserError(Exception):
     """User-facing browser problem, returned to the LLM so it can recover."""
 
 
+def _is_public_host(host: str) -> bool:
+    """True if every address the host resolves to is on the public internet (not localhost, LAN, cloud metadata)."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    return bool(infos) and all(ipaddress.ip_address(i[4][0]).is_global for i in infos)
+
+
 def allowed(url: str) -> bool:
-    host = (urlparse(url).hostname or "").lower()
+    """Which sites the agent's browser may open.
+
+    BROWSER_ALLOWED_HOSTS="*" (default): any PUBLIC website, plus the explicitly listed local hosts (the SkyTrip
+    demo). Private/internal addresses stay blocked so a web page can't use the agent to reach the local network.
+    A comma list without "*" restricts the browser to those sites (and their subdomains) only."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme not in ("http", "https") or not host:
+        return False
     hosts = {h.strip().lower() for h in settings.browser_allowed_hosts.split(",") if h.strip()}
-    public = (urlparse(settings.public_url).hostname or "").lower()
-    return bool(host) and (host == public or any(host == h or host.endswith("." + h) for h in hosts))
+    own = urlparse(settings.public_url)
+    default_port = {"http": 80, "https": 443}
+    # This app's own site (SkyTrip demo) is allowed on its exact host AND port only, so "localhost" can't be used
+    # to reach other local services (databases, admin panels) on other ports.
+    if host == (own.hostname or "").lower() and (parsed.port or default_port[parsed.scheme]) == (
+        own.port or default_port.get(own.scheme, 80)
+    ):
+        return True
+    if any(host == h or host.endswith("." + h) for h in hosts if h != "*"):
+        return True
+    return "*" in hosts and _is_public_host(host)
 
 
 def is_sensitive(label: str) -> bool:
@@ -150,13 +178,27 @@ class BrowserManager:
                 e["needs_user_approval"] = True
         return state
 
+    async def describe(self, wa_id: str) -> str:
+        """What the user's browser shows right now, without starting a browser. Told to the agent every turn,
+        because the conversation history can't know about restarts or expired pages."""
+        page = self._pages.get(wa_id)
+        if page is None or page.is_closed() or page.url in ("", "about:blank"):
+            return ("nothing is open (fresh browser: any earlier page or login code from this chat is gone, "
+                    "so start again with browser_open; request a NEW code if you need to log in)")
+        try:
+            title = await page.title()
+        except Exception:  # noqa: BLE001
+            title = ""
+        return f"'{title}' at {page.url}"
+
     async def screenshot(self, wa_id: str) -> bytes:
         return await (await self._page(wa_id)).screenshot(type="png")
 
     # ------------------------------------------------------------------ actions
     async def open(self, wa_id: str, url: str) -> dict:
         if not allowed(url):
-            raise BrowserError(f"I'm only allowed to use these sites: {settings.browser_allowed_hosts}")
+            raise BrowserError("That address isn't allowed: only public websites (and the SkyTrip demo) can be opened, "
+                               "never local or private-network addresses.")
         page = await self._page(wa_id)
         await page.goto(url)
         await self._settle(page)

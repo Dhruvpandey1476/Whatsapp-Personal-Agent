@@ -62,7 +62,16 @@ def test_final_actions_are_detected_and_hosts_restricted(monkeypatch):
     monkeypatch.setattr(bm.settings, "browser_allowed_hosts", "localhost,wikipedia.org")
     assert bm.allowed("https://en.wikipedia.org/wiki/Rajdhani_Express") and bm.allowed("https://hi.wikipedia.org/")
     assert not bm.allowed("https://wikipedia.org.evil.com/") and not bm.allowed("https://notwikipedia.org/")
-    assert bm.is_sensitive("Edit") and bm.is_sensitive("Publish changes")  # read-only: edits need approval
+    assert bm.is_sensitive("Edit") and bm.is_sensitive("Publish changes")  # edits need approval
+    monkeypatch.setattr(bm, "_is_public_host",
+                        lambda h: h not in ("192.168.1.1", "169.254.169.254", "internal.corp", "localhost", "127.0.0.1"))
+    monkeypatch.setattr(bm.settings, "browser_allowed_hosts", "*")
+    monkeypatch.setattr(bm.settings, "public_base_url", "http://localhost:8000")
+    assert bm.allowed("https://www.bbc.com/news") and bm.allowed("https://www.irctc.co.in/")  # any public site
+    assert bm.allowed("http://localhost:8000/skytrip")  # this app's own site, exact host + port
+    assert not bm.allowed("http://localhost:5432/") and not bm.allowed("http://127.0.0.1:8000/")  # other local services
+    assert not bm.allowed("http://192.168.1.1/admin") and not bm.allowed("http://169.254.169.254/latest/meta-data")
+    assert not bm.allowed("file:///C:/Windows/win.ini") and not bm.allowed("javascript:alert(1)")
 
 
 class FakeBrowser:
@@ -171,3 +180,17 @@ async def test_without_browser_the_agent_is_told_to_say_so(client):
     await post_webhook(client, text_payload("login to skytrip and book a flight"))
     system = llm.calls[0]["system"]
     assert "No browser on this server" in system and "browser_open" not in system
+
+
+async def test_agent_is_told_the_real_browser_state_each_turn(client, monkeypatch):
+    """After a restart the chat history still says 'login page open, code sent'. The agent must be told the truth."""
+    monkeypatch.setattr(bm.settings, "browser_enabled", True)
+    bm.set_browser(bm.BrowserManager())  # fresh manager: nothing open, no browser process started
+    try:
+        llm = ScriptedLLM(say("I'll start again and request a new code."))
+        set_llm(llm)
+        await post_webhook(client, text_payload("985581"))
+        system = llm.calls[0]["system"]
+        assert "the user's browser showed: nothing is open" in system and "request a NEW code" in system
+    finally:
+        bm.set_browser(None)

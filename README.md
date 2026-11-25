@@ -92,7 +92,7 @@ Every tool call is stored in `tool_traces` (input, output, error, latency):
 | Web search, page reading, weather | **Real, live** | Add `TAVILY_API_KEY` for the best search quality |
 | Voice notes in and out | **Real** (Groq Whisper speech-to-text, Gemini text-to-speech) | — |
 | Hosting | **Real** (Docker on Render + Postgres, auto-deploy on push) | Paid instance to avoid free-plan sleep |
-| Browser agent | **Real browser** (Playwright/Chromium) on the **SkyTrip demo site** | Same tools on any site that allows automation; needs ~1–2 GB RAM |
+| Browser agent | **Real browser** (Playwright/Chromium): any public website + the **SkyTrip demo site** for login/booking | Needs ~1–2 GB RAM, so it runs locally |
 
 Each provider sits behind an interface (`app/providers/base.py`), so going live means writing **one class**.
 The agent, tools and checkout flow don't change.
@@ -144,10 +144,12 @@ Agent:  📸 Booking confirmed · PNR L8EEXV
 - **Final actions need a human tap:** clicks on book / pay / confirm / place order are *not performed*. They
   become a pending approval (screenshot plus Approve/Cancel), and only the user's WhatsApp tap runs the click,
   through a plain-code path the LLM can't call. Approvals are single-use and void if the page changed.
-- **Allowlisted sites only** (`BROWSER_ALLOWED_HOSTS`, default `localhost, 127.0.0.1, wikipedia.org`; an entry
-  also covers its subdomains): the browser refuses other hosts and stops if a page navigates away.
-- **Read-only research on a real site:** Wikipedia is allowlisted for reading ("open Wikipedia and tell me when
-  the Rajdhani Express started"). Edit / Publish / Save-changes clicks are treated as final actions and need approval.
+- **Any public website, never your private network:** by default (`BROWSER_ALLOWED_HOSTS=*`) the agent can open any
+  public site. Local and private addresses (localhost services, `192.168.x.x`, cloud metadata) are blocked so a web
+  page can't use the agent to reach internal systems; only this app's own SkyTrip site is allowed, on its exact host
+  and port. It also stops if a page redirects somewhere it isn't allowed. Set a list instead of `*`
+  (e.g. `wikipedia.org,bbc.com`) to restrict the browser to specific sites.
+- **Edits need approval too:** Edit / Publish / Save-changes clicks count as final actions, like Book or Pay.
 - **Isolated per user:** a separate browser context per WhatsApp number; logins (cookies) are saved per user in
   `BROWSER_STATE_DIR` (git-ignored) and cleared with "forget my logins".
 - **CAPTCHAs are never bypassed;** real sites with bot protection need the user, or an official API.

@@ -228,6 +228,14 @@ async def run_agent(ctx: ToolContext, user_text: str) -> str:
     # Language is judged on what the user actually said (not on our appended voice-note instruction).
     said = user_text.split("\n\n[voice note")[0]
     system, language = _system(ctx, said), reply_language(said)
+    if settings.browser_enabled:
+        from app.browser.manager import get_browser
+
+        try:
+            state = await get_browser().describe(ctx.contact.wa_id)
+            system += f"\n\nAt the start of this message, the user's browser showed: {state}. Trust this over the chat history."
+        except Exception:  # noqa: BLE001 - a hint, never a reason to fail the turn
+            log.warning("could not read browser state for %s", ctx.contact.wa_id)
     tools = active_tools()[0]
     for _ in range(settings.agent_max_steps):
         # The hint is added only to what's sent, never stored in the conversation history.
