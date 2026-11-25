@@ -194,3 +194,23 @@ async def test_agent_is_told_the_real_browser_state_each_turn(client, monkeypatc
         assert "the user's browser showed: nothing is open" in system and "request a NEW code" in system
     finally:
         bm.set_browser(None)
+
+
+async def test_page_reader_finds_controls_that_are_not_links_or_buttons(tmp_path, monkeypatch):
+    """Sites like Flipkart build 'Use Email-ID' as a <span> with a JavaScript click handler (no role, no cursor)."""
+    pytest.importorskip("playwright")
+    monkeypatch.setattr(bm.settings, "browser_state_dir", str(tmp_path))
+    browser = bm.BrowserManager()
+    try:
+        page = await browser._page("u1")
+        await page.set_content("""
+          <span id="email">Use Email-ID</span>
+          <div style="cursor:pointer"><span>Pick a seat</span></div>
+          <div role="tab">Flights</div>
+          <span>Just text</span>
+          <script>document.getElementById('email').onclick = () => {}</script>""")
+        labels = [e["label"] for e in (await browser.snapshot("u1"))["elements"]]
+        assert {"Use Email-ID", "Pick a seat", "Flights"} <= set(labels)
+        assert "Just text" not in labels and labels.count("Pick a seat") == 1  # no duplicate for the nested span
+    finally:
+        await browser.close()

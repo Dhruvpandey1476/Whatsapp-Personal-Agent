@@ -29,11 +29,29 @@ SENSITIVE = re.compile(r"\b(pay|book|place\s+order|buy|purchase|checkout|confirm
 SNAPSHOT_JS = """
 () => {
   document.querySelectorAll('[data-agent-id]').forEach(e => e.removeAttribute('data-agent-id'));
-  const els = document.querySelectorAll('a[href],button,input,select,textarea,[role=button]');
+  // Real controls, plus things that only *behave* clickable (many sites build links as <div>/<span> with a click
+  // handler, e.g. Flipkart's "Use Email-ID"): ARIA roles, onclick, keyboard-focusable, or a pointer cursor.
+  const CONTROLS = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=tab],' +
+                   '[role=menuitem],[role=option],[role=checkbox],[role=radio],[role=switch],[onclick],[tabindex]';
+  const candidates = new Set(document.querySelectorAll(CONTROLS));
+  for (const el of document.querySelectorAll('div,span,li,p,label,img,svg')) {
+    if (candidates.size > 1500) break;
+    const t = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('alt') || '').trim();
+    const handler = typeof el.onclick === 'function';  // click handler set from JavaScript (no HTML attribute)
+    if (!t || t.length > 60 || (!handler && getComputedStyle(el).cursor !== 'pointer')) continue;
+    // keep the outermost pointer element of a group (not each nested span), and skip ones inside a real control
+    const parent = el.parentElement;
+    if (parent && getComputedStyle(parent).cursor === 'pointer' && (parent.innerText || '').trim() === t) continue;
+    if (el.closest('a[href],button,[role=button],[role=link]')) continue;
+    candidates.add(el);
+  }
+  const els = [...candidates].sort((a, b) =>
+    a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);  // page order
   const out = []; let n = 0;
   for (const el of els) {
     const r = el.getBoundingClientRect(), st = getComputedStyle(el);
     if (el.type === 'hidden' || st.visibility === 'hidden' || st.display === 'none' || (!r.width && !r.height)) continue;
+    if (el.getAttribute('tabindex') === '-1' && !el.matches('a[href],button,input,select,textarea')) continue;
     n++; el.setAttribute('data-agent-id', String(n));
     let label = el.getAttribute('aria-label') || '';
     if (!label && el.labels && el.labels.length) label = el.labels[0].innerText;
