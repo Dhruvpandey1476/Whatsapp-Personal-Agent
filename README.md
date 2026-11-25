@@ -161,6 +161,10 @@ playwright install chromium
 # .env: BROWSER_ENABLED=true  (PUBLIC_BASE_URL = your tunnel URL; its host is allowed automatically)
 uvicorn app.main:app --port 8000
 ```
+**One-command demo:** `python scripts/demo.py` starts a cloudflared tunnel and the server with the browser
+enabled, then points Meta's webhook at your laptop. **Ctrl+C** stops everything and points the webhook back to the
+cloud (`DEMO_RESTORE_WEBHOOK_URL`). If the window was closed instead, run `python scripts/demo.py stop`.
+
 Tests: `tests/test_browser.py` includes a real headless-Chromium run that logs in with an OTP, searches, fills
 the form, is stopped at "Book now" until approval, then books.
 
