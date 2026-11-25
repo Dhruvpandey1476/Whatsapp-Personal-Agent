@@ -59,6 +59,10 @@ def test_final_actions_are_detected_and_hosts_restricted(monkeypatch):
     assert not any(bm.is_sensitive(x) for x in ("Search flights", "Send code", "Verify and log in", "Select", "Facebook"))
     monkeypatch.setattr(bm.settings, "browser_allowed_hosts", "localhost")
     assert bm.allowed("http://localhost:8000/skytrip") and not bm.allowed("https://www.irctc.co.in/")
+    monkeypatch.setattr(bm.settings, "browser_allowed_hosts", "localhost,wikipedia.org")
+    assert bm.allowed("https://en.wikipedia.org/wiki/Rajdhani_Express") and bm.allowed("https://hi.wikipedia.org/")
+    assert not bm.allowed("https://wikipedia.org.evil.com/") and not bm.allowed("https://notwikipedia.org/")
+    assert bm.is_sensitive("Edit") and bm.is_sensitive("Publish changes")  # read-only: edits need approval
 
 
 class FakeBrowser:

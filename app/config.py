@@ -52,7 +52,8 @@ class Settings(BaseSettings):
     # `playwright install chromium` and ~1-2 GB RAM, so it's meant for running locally / on a bigger server.
     browser_enabled: bool = False
     browser_headless: bool = True
-    browser_allowed_hosts: str = "localhost,127.0.0.1"  # the agent's browser can't leave these sites
+    # The agent's browser can't leave these sites. An entry also allows its subdomains (wikipedia.org -> en.wikipedia.org).
+    browser_allowed_hosts: str = "localhost,127.0.0.1,wikipedia.org"
     browser_state_dir: str = "./browser_sessions"  # saved logins (cookies) per user; keep private
     demo_site_enabled: bool = True  # SkyTrip demo website at /skytrip
 

@@ -138,6 +138,9 @@ def browser_prompt() -> str:
 Browser (you have a real web browser via browser_* tools):
 - You can operate these websites for the user: SkyTrip, an airline booking site, at {site} (log in by OTP).
   Use it when the user asks you to book or check something *on the website / SkyTrip*, or to log in for them.
+- Wikipedia (https://en.wikipedia.org, other languages too) is READ-ONLY research: open or search articles and
+  read them to answer, e.g. https://en.wikipedia.org/wiki/Special:Search?search=Rajdhani+Express. Never log in or
+  edit there. Use it when the user asks you to look something up "on Wikipedia" or to read a page in the browser.
 - Login by OTP: open the site, type the user's mobile number (their WhatsApp number is {{wa_id}}), click
   "Send code", then ask the user to send you the 6-digit code they just received. Never guess or invent a code,
   and never type passwords. Once logged in, the login is remembered.

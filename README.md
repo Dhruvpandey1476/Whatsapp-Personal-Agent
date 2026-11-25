@@ -144,8 +144,10 @@ Agent:  📸 Booking confirmed · PNR L8EEXV
 - **Final actions need a human tap:** clicks on book / pay / confirm / place order are *not performed*. They
   become a pending approval (screenshot plus Approve/Cancel), and only the user's WhatsApp tap runs the click,
   through a plain-code path the LLM can't call. Approvals are single-use and void if the page changed.
-- **Allowlisted sites only** (`BROWSER_ALLOWED_HOSTS`): the browser refuses other hosts and stops if a page
-  navigates away.
+- **Allowlisted sites only** (`BROWSER_ALLOWED_HOSTS`, default `localhost, 127.0.0.1, wikipedia.org`; an entry
+  also covers its subdomains): the browser refuses other hosts and stops if a page navigates away.
+- **Read-only research on a real site:** Wikipedia is allowlisted for reading ("open Wikipedia and tell me when
+  the Rajdhani Express started"). Edit / Publish / Save-changes clicks are treated as final actions and need approval.
 - **Isolated per user:** a separate browser context per WhatsApp number; logins (cookies) are saved per user in
   `BROWSER_STATE_DIR` (git-ignored) and cleared with "forget my logins".
 - **CAPTCHAs are never bypassed;** real sites with bot protection need the user, or an official API.

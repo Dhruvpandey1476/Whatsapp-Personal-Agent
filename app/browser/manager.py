@@ -22,7 +22,7 @@ from app.config import settings
 log = logging.getLogger(__name__)
 
 SENSITIVE = re.compile(r"\b(pay|book|place\s+order|buy|purchase|checkout|confirm(\s+(booking|order|payment))?|"
-                       r"submit\s+order|transfer|delete\s+account)\b", re.I)  # fmt: skip
+                       r"submit\s+order|transfer|delete\s+account|edit|publish|save\s+changes)\b", re.I)  # fmt: skip
 
 SNAPSHOT_JS = """
 () => {
@@ -59,7 +59,7 @@ def allowed(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
     hosts = {h.strip().lower() for h in settings.browser_allowed_hosts.split(",") if h.strip()}
     public = (urlparse(settings.public_url).hostname or "").lower()
-    return bool(host) and (host in hosts or host == public)
+    return bool(host) and (host == public or any(host == h or host.endswith("." + h) for h in hosts))
 
 
 def is_sensitive(label: str) -> bool:
