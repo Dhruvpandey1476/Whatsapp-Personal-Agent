@@ -443,3 +443,24 @@ async def test_user_still_gets_apology_when_agent_fails_and_session_is_expired(c
     monkeypatch.setattr(engine, "run_agent", failing_agent)
     await post_webhook(client, text_payload("what's the weather?"))
     assert "Something went wrong" in body(last_out())
+
+
+def test_reply_language_follows_latest_message():
+    from app.agent.agent import reply_language
+
+    assert reply_language("give me the cheapest flight available from delhi to mumbai for today") == "English"
+    assert reply_language("show my bookings") == "English"
+    assert reply_language("what is the weather in goa") == "English"
+    assert reply_language("kal Delhi se Goa ki sasti flight dikhao").startswith("Hinglish")
+    assert reply_language("mujhe biryani chahiye").startswith("Hinglish")
+    assert reply_language("कल दिल्ली से गोवा की फ्लाइट").startswith("Hindi")
+
+
+async def test_english_message_tells_model_to_answer_in_english(client):
+    llm = ScriptedLLM(say("ok"))
+    set_llm(llm)
+    await post_webhook(client, text_payload("kal Delhi se Goa ki sasti flight dikhao"))
+    assert "latest message is in Hinglish" in llm.calls[-1]["system"]
+    llm.turns.append(say("ok"))
+    await post_webhook(client, text_payload("give me the cheapest flight from delhi to mumbai for today"))
+    assert "latest message is in English" in llm.calls[-1]["system"]

@@ -6,6 +6,7 @@ The LLM client sits behind a tiny protocol so tests can use a scripted fake (no 
 """
 
 import json
+import re
 import logging
 import time
 from datetime import datetime
@@ -58,10 +59,29 @@ update_profile without asking. Only cancel a booking when explicitly asked.
 - Flight, train and restaurant inventory is a demo dataset (not live airline/IRCTC/restaurant systems). If \
 asked whether those prices are real-time, say so honestly. Web search and weather are live.
 - Style: WhatsApp-friendly, concise, warm, emojis sparingly. WhatsApp formatting only: *bold* with single \
-asterisks, _italic_; no markdown headings, tables or **double asterisks**. Reply in the user's language \
-(English / Hindi / Hinglish).
+asterisks, _italic_; no markdown headings, tables or **double asterisks**.
+- Language: always reply in the language AND script of the user's LATEST message, never of earlier messages. \
+English → English. Hinglish (Hindi written in English letters, e.g. "kal sasti flight") → Hinglish in English \
+letters. Use Devanagari (हिंदी) only if the user wrote in Devanagari.
 
 Saved profile (long-term memory): {profile}"""
+
+HINGLISH_WORDS = {
+    "kal", "aaj", "parso", "sasti", "sasta", "sabse", "dikhao", "batao", "chahiye", "karo", "kar", "karna", "kya",
+    "hai", "hain", "mujhe", "mera", "meri", "ke", "ki", "ko", "se", "aur", "nahi", "haan", "acha", "accha", "bhai",
+    "kitna", "kitne", "kaise", "kab", "kahan", "wala", "wali", "doon", "dena", "lena", "jana", "hoga", "bhej",
+}  # fmt: skip
+
+
+def reply_language(text: str) -> str:
+    """Decide the reply language/script from the user's latest message (deterministic, so the model can't drift)."""
+    if re.search(r"[ऀ-ॿ]", text):
+        return "Hindi in Devanagari script"
+    words = re.findall(r"[a-z]+", text.lower())
+    hits = sum(w in HINGLISH_WORDS for w in words)
+    if words and (hits >= 2 or hits / len(words) >= 0.25):
+        return "Hinglish (Hindi in English/Latin letters, never Devanagari)"
+    return "English"
 
 
 class LLM(Protocol):
@@ -85,16 +105,19 @@ def set_llm(llm: LLM | None) -> None:
     _llm = llm
 
 
-def _system(ctx: ToolContext) -> str:
+def _system(ctx: ToolContext, user_text: str = "") -> str:
     now = datetime.now(settings.tz)
     profile = ctx.contact.profile or {}
-    return SYSTEM_PROMPT.format(
+    prompt = SYSTEM_PROMPT.format(
         name=profile.get("full_name") or ctx.contact.name or "the user",
         today=now.date().isoformat(),
         weekday=now.strftime("%A"),
         time=now.strftime("%H:%M"),
         profile=json.dumps(profile, ensure_ascii=False) if profile else "(empty: nothing saved yet)",
     )
+    if user_text:
+        prompt += f"\n\nThe user's latest message is in {reply_language(user_text)}. Write your whole reply in that."
+    return prompt
 
 
 def _trim(history: list[dict], limit: int) -> list[dict]:
@@ -146,8 +169,10 @@ async def run_agent(ctx: ToolContext, user_text: str) -> str:
     messages = _merge_roles(history)
     reply = ""
 
+    # Language is judged on what the user actually said (not on our appended voice-note instruction).
+    system = _system(ctx, user_text.split("\n\n[voice note")[0])
     for _ in range(settings.agent_max_steps):
-        resp = await llm.create(system=_system(ctx), tools=TOOLS, messages=messages)
+        resp = await llm.create(system=system, tools=TOOLS, messages=messages)
         messages.append({"role": "assistant", "content": resp["content"]})
         texts = [b["text"] for b in resp["content"] if b["type"] == "text" and b["text"].strip()]
         if texts:
