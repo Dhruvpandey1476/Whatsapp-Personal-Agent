@@ -184,10 +184,11 @@ All three providers expose an OpenAI-compatible API, so a single adapter (`app/a
 Set `LLM_MODEL` to use any other tool-calling model from that provider. Set `LLM_BASE_URL` to point at another
 OpenAI-compatible endpoint (for example a local Ollama).
 
-**Cross-provider fallback:** if the main model times out, is overloaded (5xx) or is rate-limited, the agent retries
-once and then answers with the fallback. That can be another model on the same provider (`LLM_FALLBACK_MODEL`) or a
-**different provider** (`LLM_FALLBACK_PROVIDER` + `LLM_FALLBACK_API_KEY`). The recommended setup is **Groq as the main
-model and Gemini as the fallback**, so one provider's outage doesn't take the bot down.
+**Fallback chain across providers:** if the main model fails (timeout, overload, rate limit, a malformed tool
+call), the agent moves down an ordered chain, e.g. **Groq Qwen → OpenRouter Nemotron (free) → Gemini 3 Flash →
+Gemini Flash-Lite**, set with `LLM_FALLBACKS=provider:model,…`. A model that reports its **daily** quota is used up
+is skipped for 10 minutes instead of being retried on every message. One provider's outage or quota never takes
+the bot down.
 
 ## Deploy to the cloud (Render, free)
 The repo includes a `Dockerfile` (it honours `$PORT`) and a `render.yaml` Blueprint that creates the web service plus

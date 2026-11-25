@@ -120,7 +120,7 @@ async def test_fallback_to_a_different_provider(monkeypatch):
 
     transport = httpx.MockTransport(handler)
     main = OpenAICompatibleLLM("groq", http=httpx.AsyncClient(transport=transport))
-    main._fallback = OpenAICompatibleLLM("gemini", http=httpx.AsyncClient(transport=transport),
+    main._clients["gemini"] = OpenAICompatibleLLM("gemini", http=httpx.AsyncClient(transport=transport),
                                          model="gemini-flash-lite-latest")  # fmt: skip
     out = await main.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])
     assert out["content"][0]["text"] == "from gemini"
@@ -171,9 +171,53 @@ async def test_groq_tool_use_failed_400_falls_back_but_bad_key_does_not(monkeypa
 
     t = httpx.MockTransport(handler)
     main = OpenAICompatibleLLM("groq", http=httpx.AsyncClient(transport=t))
-    main._fallback = OpenAICompatibleLLM("gemini", http=httpx.AsyncClient(transport=t), model="g")
+    main._clients["gemini"] = OpenAICompatibleLLM("gemini", http=httpx.AsyncClient(transport=t), model="g")
     out = await main.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])
     assert out["content"][0]["text"] == "from gemini"
     status["code"] = 401
     with pytest.raises(LLMError, match="401"):
         await main.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])
+
+
+async def test_chain_across_providers_and_daily_quota_cooldown(monkeypatch):
+    from app.agent import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.settings, "llm_fallbacks",
+                        "openrouter:nvidia/nemotron-3.5-super-vl:free,gemini:gemini-3-flash-preview")  # fmt: skip
+    monkeypatch.setattr(llm_mod.settings, "openrouter_api_key", "or-key")
+    monkeypatch.setattr(llm_mod.settings, "gemini_api_key", "g-key")
+    calls = []
+
+    def handler(req):
+        model = json.loads(req.content)["model"]
+        calls.append(model)
+        if "groq" in str(req.url):  # Groq's real daily-quota message
+            return httpx.Response(429, json={"error": {"message": "Rate limit reached on tokens per day (TPD)"}})
+        if "openrouter" in str(req.url):
+            return httpx.Response(429, json={"error": {"message": "temporarily rate-limited upstream"}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": f"answered by {model}"}}]})
+
+    t = httpx.MockTransport(handler)
+    main = OpenAICompatibleLLM("groq", http=httpx.AsyncClient(transport=t), model="qwen/qwen3.8-27b")
+    main._clients["openrouter"] = OpenAICompatibleLLM("openrouter", http=httpx.AsyncClient(transport=t))
+    main._clients["gemini"] = OpenAICompatibleLLM("gemini", http=httpx.AsyncClient(transport=t))
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(llm_mod.asyncio, "sleep", lambda s: real_sleep(0))
+
+    out = await main.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])
+    assert out["content"][0]["text"] == "answered by gemini-3-flash-preview"
+    assert calls.count("qwen/qwen3.8-27b") == 1  # daily quota: not retried
+    assert "nvidia/nemotron-3.5-super-vl:free" in calls  # model id with ':free' parsed correctly
+
+    calls.clear()
+    await main.create(system="S", tools=[], messages=[{"role": "user", "content": "again"}])
+    assert "qwen/qwen3.8-27b" not in calls  # out-of-quota model skipped during its cooldown
+
+
+def test_chain_skips_providers_without_a_key(monkeypatch):
+    from app.agent import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.settings, "llm_fallbacks", "openrouter:some/model:free,gemini:gemini-3-flash-preview")
+    monkeypatch.setattr(llm_mod.settings, "openrouter_api_key", "")
+    monkeypatch.setattr(llm_mod.settings, "gemini_api_key", "g-key")
+    assert llm_mod.fallback_chain("groq", "qwen") == [("gemini", "gemini-3-flash-preview")]

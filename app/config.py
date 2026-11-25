@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     llm_fallback_model: str = ""  # used once when the main model is unavailable (429 / 5xx / timeout)
     llm_fallback_provider: str = ""  # optional: a DIFFERENT provider for the fallback (e.g. gemini)
     llm_fallback_api_key: str = ""  # key for the fallback provider (defaults to LLM_API_KEY)
+    # Ordered fallback chain across providers, tried when the main model fails or is out of quota:
+    # "openrouter:nvidia/nemotron-3.5-super-vl:free,gemini:gemini-3-flash-preview". Overrides the two settings above.
+    llm_fallbacks: str = ""
+    groq_api_key: str = ""  # per-provider keys for the chain (main/fallback keys above are also used)
+    gemini_api_key: str = ""
+    openrouter_api_key: str = ""
     llm_max_tokens: int = 700  # WhatsApp replies are short; Groq free tier caps output at 1000 tokens/minute
     llm_base_url: str = ""  # optional override of the provider's OpenAI-compatible endpoint
     llm_enabled: bool = True

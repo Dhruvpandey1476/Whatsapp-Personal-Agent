@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from typing import Any
 
@@ -122,6 +123,40 @@ def from_openai_response(data: dict) -> dict:
     return {"content": blocks, "stop_reason": "tool_use" if has_calls else "end_turn"}
 
 
+# "tokens per day", "requests per day", "daily limit", "quota": waiting a few seconds won't help.
+QUOTA_EXHAUSTED = re.compile(r"per day|\bTPD\b|\bRPD\b|daily|quota", re.I)
+QUOTA_COOLDOWN_S = 600
+
+
+def key_for(provider: str) -> str:
+    """API key for a provider: its own setting (GROQ_/GEMINI_/OPENROUTER_API_KEY), else the main/fallback key."""
+    explicit = {"groq": settings.groq_api_key, "gemini": settings.gemini_api_key,
+                "openrouter": settings.openrouter_api_key}.get(provider, "")  # fmt: skip
+    if explicit:
+        return explicit
+    if provider == settings.llm_provider:
+        return settings.llm_api_key
+    if provider == settings.llm_fallback_provider.lower():
+        return settings.llm_fallback_api_key
+    return ""
+
+
+def fallback_chain(main_provider: str, main_model: str) -> list[tuple[str, str]]:
+    """[(provider, model)] tried in order after the main model. LLM_FALLBACKS ("openrouter:x:free,gemini:y") wins;
+    otherwise LLM_FALLBACK_PROVIDER + LLM_FALLBACK_MODEL (a comma list) are used. Providers without a key are skipped."""
+    chain: list[tuple[str, str]] = []
+    if settings.llm_fallbacks.strip():
+        for item in settings.llm_fallbacks.split(","):
+            provider, _, model = item.strip().partition(":")  # model ids may contain ':' (":free")
+            if provider.lower() in PROVIDERS:
+                chain.append((provider.lower(), model.strip()))
+    else:
+        provider = settings.llm_fallback_provider.lower() or main_provider
+        models = [m.strip() for m in settings.llm_fallback_model.split(",") if m.strip()]
+        chain = [(provider, m) for m in models] or ([(provider, "")] if provider != main_provider else [])
+    return [(p, m) for p, m in chain if (p, m) != (main_provider, main_model) and (p == main_provider or key_for(p))]
+
+
 class OpenAICompatibleLLM:
     def __init__(self, provider: str | None = None, http: httpx.AsyncClient | None = None, *,
                  api_key: str | None = None, model: str | None = None, base_url: str | None = None) -> None:  # fmt: skip
@@ -132,44 +167,43 @@ class OpenAICompatibleLLM:
         main = provider is None or self.provider == settings.llm_provider
         self.base_url = (base_url or (settings.llm_base_url if main else "") or preset["base_url"]).rstrip("/")
         self.model = model or (settings.llm_model if main else "") or preset["model"]
-        headers = {"Authorization": f"Bearer {api_key or settings.llm_api_key}"}
+        headers = {"Authorization": f"Bearer {api_key or key_for(self.provider) or settings.llm_api_key}"}
         if self.provider == "openrouter":
             headers["X-Title"] = settings.app_name
         self.http = http or httpx.AsyncClient(timeout=25, headers=headers)
-        self._fallback: "OpenAICompatibleLLM | None" = None
+        self._clients: dict[str, OpenAICompatibleLLM] = {}
+        self._cooldown: dict[tuple[str, str], float] = {}  # (provider, model) -> skip until (monotonic time)
 
-    def fallback(self) -> "tuple[OpenAICompatibleLLM, list[str]] | None":
-        """Where to go when the main model fails: another provider (e.g. Groq -> Gemini) or other models.
-        LLM_FALLBACK_MODEL may list several models, tried in order ("gemini-3-flash-preview,gemini-flash-lite-latest")."""
-        models = [m.strip() for m in settings.llm_fallback_model.split(",") if m.strip()]
-        fp = settings.llm_fallback_provider.lower()
-        if fp and fp != self.provider:
-            if self._fallback is None:
-                self._fallback = OpenAICompatibleLLM(
-                    fp, api_key=settings.llm_fallback_api_key or settings.llm_api_key,
-                    model=models[0] if models else None)  # fmt: skip
-            return self._fallback, models or [self._fallback.model]
-        models = [m for m in models if m != self.model]
-        return (self, models) if models else None
+    def _client_for(self, provider: str) -> "OpenAICompatibleLLM":
+        if provider == self.provider:
+            return self
+        if provider not in self._clients:
+            self._clients[provider] = OpenAICompatibleLLM(provider, api_key=key_for(provider))
+        return self._clients[provider]
 
     async def create(self, *, system: str, tools: list[dict], messages: list[dict]) -> dict:
-        try:
-            return await self._create(self.model, system, tools, messages)
-        except LLMError as exc:
-            # Fall back on anything except bad credentials: outages, rate limits (incl. daily quotas), timeouts, and
-            # 400s such as Groq's "tool_use_failed" (a malformed tool call), which another model handles fine.
-            fb = self.fallback()
-            if fb is None or exc.status in (401, 403):
-                raise
-            client, models = fb
-            error: LLMError = exc
-            for model in models:
-                log.warning("%s failed (%s), falling back to %s:%s", self.model, str(error)[:160], client.provider, model)
-                try:
-                    return await client._create(model, system, tools, messages)
-                except LLMError as next_exc:
-                    error = next_exc
-            raise error
+        """Main model first, then the fallback chain. Falls through on anything except the main model's bad
+        credentials: outages, rate limits, timeouts, and 400s such as Groq's tool_use_failed. Models whose daily
+        quota is used up are skipped for a while instead of being retried on every message."""
+        attempts = [(self, self.model), *[(self._client_for(p), m) for p, m in fallback_chain(self.provider, self.model)]]
+        error: LLMError | None = None
+        now = time.monotonic()
+        for client, model in attempts:
+            model = model or client.model
+            if self._cooldown.get((client.provider, model), 0) > now:
+                continue
+            if error is not None:
+                log.warning("falling back to %s:%s (%s)", client.provider, model, str(error)[:160])
+            try:
+                return await client._create(model, system, tools, messages)
+            except LLMError as exc:
+                if client is self and exc.status in (401, 403):
+                    raise  # misconfigured main key: fail loudly instead of hiding it
+                if isinstance(exc, RateLimited) and QUOTA_EXHAUSTED.search(str(exc)):
+                    self._cooldown[(client.provider, model)] = now + QUOTA_COOLDOWN_S
+                    log.warning("%s:%s is out of quota; skipping it for %d min", client.provider, model, QUOTA_COOLDOWN_S // 60)
+                error = exc
+        raise error or Unavailable("all models are cooling down after hitting their quotas")
 
     async def _create(self, model: str, system: str, tools: list[dict], messages: list[dict]) -> dict:
         payload = {
@@ -193,6 +227,9 @@ class OpenAICompatibleLLM:
             else:
                 if resp.status_code == 200:
                     return from_openai_response(resp.json())
+                if resp.status_code == 429 and QUOTA_EXHAUSTED.search(resp.text):
+                    # a daily quota doesn't come back in seconds: don't retry, let the chain move on
+                    raise RateLimited(f"{self.provider} HTTP 429: {resp.text[:300]}", 429)
                 if resp.status_code not in RETRYABLE or attempt == 2:
                     err = (RateLimited if resp.status_code == 429
                            else Unavailable if resp.status_code in RETRYABLE else LLMError)  # fmt: skip

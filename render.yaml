@@ -40,6 +40,10 @@ services:
         sync: false
       - key: LLM_FALLBACK_MODEL
         value: gemini-3-flash-preview,gemini-flash-lite-latest
+      - key: LLM_FALLBACKS
+        value: openrouter:nvidia/nemotron-3.5-super-vl:free,openrouter:nvidia/nemotron-3-ultra-550b-a55b:free,gemini:gemini-3-flash-preview,gemini:gemini-flash-lite-latest
+      - key: OPENROUTER_API_KEY
+        sync: false
       - key: TAVILY_API_KEY
         sync: false
       - key: MAX_ORDER_AMOUNT
