@@ -105,6 +105,15 @@ def set_llm(llm: LLM | None) -> None:
     _llm = llm
 
 
+def active_tools() -> tuple[list[dict], dict]:
+    """Tool schemas + implementations for this deployment (browser tools only when enabled)."""
+    if not settings.browser_enabled:
+        return TOOLS, REGISTRY
+    from app.agent.browser_tools import BROWSER_REGISTRY, BROWSER_TOOLS
+
+    return [*TOOLS, *BROWSER_TOOLS], {**REGISTRY, **BROWSER_REGISTRY}
+
+
 def _system(ctx: ToolContext, user_text: str = "") -> str:
     now = datetime.now(settings.tz)
     profile = ctx.contact.profile or {}
@@ -115,6 +124,10 @@ def _system(ctx: ToolContext, user_text: str = "") -> str:
         time=now.strftime("%H:%M"),
         profile=json.dumps(profile, ensure_ascii=False) if profile else "(empty: nothing saved yet)",
     )
+    if settings.browser_enabled:
+        from app.agent.browser_tools import browser_prompt
+
+        prompt += browser_prompt().replace("{wa_id}", ctx.contact.wa_id or "unknown")
     if user_text:
         prompt += f"\n\nThe user's latest message is in {reply_language(user_text)}. Write your whole reply in that."
     return prompt
@@ -180,7 +193,7 @@ def _merge_roles(history: list[dict]) -> list[dict]:
 
 
 async def _run_tool(ctx: ToolContext, name: str, args: dict) -> tuple[Any, bool]:
-    fn = REGISTRY.get(name)
+    fn = active_tools()[1].get(name)
     started = time.perf_counter()
     try:
         if fn is None:
@@ -206,9 +219,10 @@ async def run_agent(ctx: ToolContext, user_text: str) -> str:
     # Language is judged on what the user actually said (not on our appended voice-note instruction).
     said = user_text.split("\n\n[voice note")[0]
     system, language = _system(ctx, said), reply_language(said)
+    tools = active_tools()[0]
     for _ in range(settings.agent_max_steps):
         # The hint is added only to what's sent, never stored in the conversation history.
-        resp = await llm.create(system=system, tools=TOOLS, messages=_with_language_hint(messages, language))
+        resp = await llm.create(system=system, tools=tools, messages=_with_language_hint(messages, language))
         messages.append({"role": "assistant", "content": resp["content"]})
         texts = [b["text"] for b in resp["content"] if b["type"] == "text" and b["text"].strip()]
         if texts:

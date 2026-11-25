@@ -28,6 +28,7 @@ Agent:  🎉 Payment received: ₹4,280 · PNR: *QKZTRM*
 | 🍔 **Food** | Find restaurants by dish or cuisine, veg-only filter, menus, multi-item cart, delivery fee and taxes, saved address. **Pay online or cash on delivery** |
 | 🌐 **Live info** | `web_search` (Tavily if a key is set, otherwise DuckDuckGo → Google News → Wikipedia), `read_webpage` (public URLs only), `get_weather` (Open-Meteo, any city) |
 | 🎙️ **Voice notes** | Send a WhatsApp voice note in English, Hindi or Hinglish. It's downloaded from Meta, transcribed with **Groq Whisper** (`whisper-large-v3-turbo`), then handled exactly like a typed message. **Voice in, voice out:** the answer comes back as a WhatsApp voice note, spoken by **Gemini TTS** (natural Hindi, English and Hinglish) and converted to OGG/Opus with ffmpeg. Typed messages get text; if speech fails, it falls back to text |
+| 🌐 **Browser agent** | Logs in to websites with **your OTP** and does tasks in a real browser (search, fill forms, book), asking your approval before any final click. See below |
 | 💬 **General chat** | Answers any question and gives advice and recommendations. For things it can't book (hotels, cabs, movie tickets) it searches and shares links |
 | 🧠 **Memory** | Long-term **profile** (name, age, gender, address, preferences) saved automatically, so "book the same for me" works. Short-term chat history per user |
 | 📋 **Manage** | "show my bookings", "cancel FL-7K2Q9A" (refund shown). Paid food orders can't be cancelled |
@@ -91,6 +92,7 @@ Every tool call is stored in `tool_traces` (input, output, error, latency):
 | Web search, page reading, weather | **Real, live** | Add `TAVILY_API_KEY` for the best search quality |
 | Voice notes in and out | **Real** (Groq Whisper speech-to-text, Gemini text-to-speech) | — |
 | Hosting | **Real** (Docker on Render + Postgres, auto-deploy on push) | Paid instance to avoid free-plan sleep |
+| Browser agent | **Real browser** (Playwright/Chromium) on the **SkyTrip demo site** | Same tools on any site that allows automation; needs ~1–2 GB RAM |
 
 Each provider sits behind an interface (`app/providers/base.py`), so going live means writing **one class**.
 The agent, tools and checkout flow don't change.
@@ -118,6 +120,49 @@ python scripts/simulate.py --name "Dhruv"
 **Tests** (offline, with a scripted LLM, so they're deterministic): `pytest`. They cover the full flight / train / food
 flows end to end through signed webhooks, the checkout, the spend limit, ownership, stale drafts, tool-error recovery
 and memory trimming.
+
+## Browser agent: logs in with your OTP and operates websites
+
+With `BROWSER_ENABLED=true` the agent gets a **real headless browser** (Playwright + Chromium) and can do tasks
+on websites for the user, not only through APIs. It reads each page as text plus numbered elements
+(`[3] button "Send code"`) and decides each step itself: open, fill, click, read, screenshot.
+
+```
+You:    Log in to SkyTrip and book the cheapest Delhi → Mumbai flight on 28 Nov. Passenger Dhruv Pandey, 24, M.
+Agent:  (opens the site, types your number, clicks "Send code")
+        I've requested the login code; please send me the 6-digit OTP you received.
+You:    036392
+Agent:  (verifies, searches, picks the cheapest, fills the passenger form, goes to review)
+        📸 screenshot  🛡️ I'm about to click "Book now and pay ₹4,840". [✅ Approve] [❌ Cancel]
+You:    (taps Approve)
+Agent:  📸 Booking confirmed · PNR L8EEXV
+```
+
+**Safety, enforced in code (`app/browser/manager.py`), not left to the LLM**
+- **Consent by OTP:** the site sends the code to the user; the agent can only log in when the user forwards
+  it, and is told never to guess codes. **Passwords are never typed**: password fields are refused.
+- **Final actions need a human tap:** clicks on book / pay / confirm / place order are *not performed*. They
+  become a pending approval (screenshot plus Approve/Cancel), and only the user's WhatsApp tap runs the click,
+  through a plain-code path the LLM can't call. Approvals are single-use and void if the page changed.
+- **Allowlisted sites only** (`BROWSER_ALLOWED_HOSTS`): the browser refuses other hosts and stops if a page
+  navigates away.
+- **Isolated per user:** a separate browser context per WhatsApp number; logins (cookies) are saved per user in
+  `BROWSER_STATE_DIR` (git-ignored) and cleared with "forget my logins".
+- **CAPTCHAs are never bypassed;** real sites with bot protection need the user, or an official API.
+
+**SkyTrip demo site** (`/skytrip`): a small airline site with OTP login, search, passenger form, review and
+"Book now" (same flight inventory as the API tools). Real airlines forbid automation and use CAPTCHAs, so the
+demo uses a site we own. Its OTP is delivered on WhatsApp as a stand-in for SMS.
+
+**Run it locally** (Chromium needs more RAM than Render's free plan):
+```bash
+pip install -r requirements-browser.txt
+playwright install chromium
+# .env: BROWSER_ENABLED=true  (PUBLIC_BASE_URL = your tunnel URL; its host is allowed automatically)
+uvicorn app.main:app --port 8000
+```
+Tests: `tests/test_browser.py` includes a real headless-Chromium run that logs in with an OTP, searches, fills
+the form, is stopped at "Book now" until approval, then books.
 
 ## Switching LLM provider
 All three providers expose an OpenAI-compatible API, so a single adapter (`app/agent/llm.py`) covers them. Only `.env` changes:

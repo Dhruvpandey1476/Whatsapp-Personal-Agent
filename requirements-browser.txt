@@ -1,0 +1,3 @@
+# Optional: browser agent (set BROWSER_ENABLED=true). After installing run: playwright install chromium
+-r requirements.txt
+playwright>=1.47

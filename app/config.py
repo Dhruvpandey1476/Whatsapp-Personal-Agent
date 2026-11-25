@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 700  # WhatsApp replies are short; Groq free tier caps output at 1000 tokens/minute
     llm_base_url: str = ""  # optional override of the provider's OpenAI-compatible endpoint
     llm_enabled: bool = True
-    agent_max_steps: int = 8  # max tool-use iterations per user message
+    agent_max_steps: int = 12  # max tool-use iterations per user message (browser tasks need a few more)
     history_messages: int = 30  # short-term conversation memory kept per user
 
     # --- Voice notes (speech-to-text, OpenAI-compatible /audio/transcriptions; Groq Whisper by default)
@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     tts_voice: str = "Kore"
     tts_api_key: str = ""  # defaults to the Gemini key (main or fallback)
     ffmpeg_path: str = "ffmpeg"  # converts speech to WhatsApp voice-note format (OGG/Opus)
+
+    # --- Browser agent (Playwright). Off by default: needs `pip install -r requirements-browser.txt` +
+    # `playwright install chromium` and ~1-2 GB RAM, so it's meant for running locally / on a bigger server.
+    browser_enabled: bool = False
+    browser_headless: bool = True
+    browser_allowed_hosts: str = "localhost,127.0.0.1"  # the agent's browser can't leave these sites
+    browser_state_dir: str = "./browser_sessions"  # saved logins (cookies) per user; keep private
+    demo_site_enabled: bool = True  # SkyTrip demo website at /skytrip
 
     tavily_api_key: str = ""  # optional: best web search (tavily.com free tier); falls back to free sources
 

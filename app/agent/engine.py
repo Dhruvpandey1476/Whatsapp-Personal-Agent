@@ -18,7 +18,7 @@ from app.db import SessionLocal
 from app.models import Contact
 from app.services import bookings, tts, voice
 from app.services.messaging import get_client, send_message
-from app.whatsapp.client import audio_message, buttons_message, cta_url_message, text_message
+from app.whatsapp.client import audio_message, buttons_message, cta_url_message, image_message, text_message
 from app.whatsapp.parser import InboundMessage
 
 log = logging.getLogger(__name__)
@@ -58,6 +58,10 @@ def _chunks(text: str, size: int = 4000) -> list[str]:
 async def handle_message(db: AsyncSession, contact: Contact, msg: InboundMessage) -> None:
     ctx = ToolContext(db=db, contact=contact)
     first_time = not contact.history and not contact.profile
+
+    if msg.reply_id and msg.reply_id.startswith("br:"):
+        await _browser_button(ctx, msg.reply_id)
+        return
 
     if msg.reply_id and msg.reply_id.startswith("bk:"):
         await _booking_button(ctx, msg.reply_id)
@@ -167,6 +171,43 @@ async def _voice_to_text(db: AsyncSession, contact: Contact, msg: InboundMessage
         await say(db, contact, text_message("😕 I couldn't catch that voice note. Could you try again or type it?"))
         return None
     return text
+
+
+async def _browser_button(ctx: ToolContext, reply_id: str) -> None:
+    """The user's Approve/Cancel tap for a final browser action. Plain code: the LLM can't trigger this."""
+    from app.browser.manager import BrowserError, get_browser
+
+    db, contact = ctx.db, ctx.contact
+    _, action, token = (reply_id.split(":", 2) + ["", ""])[:3]
+    browser = get_browser()
+    item = browser.pending(contact.wa_id, token)
+    if item is None:
+        await say(db, contact, text_message("⚠️ That request has expired or was already handled."))
+        return
+    if action == "cancel":
+        browser.cancel(contact.wa_id, token)
+        await say(db, contact, text_message(f"❌ Okay, I did not click \u201c{item['label']}\u201d."))
+        await remember(ctx, f"user cancelled the browser action '{item['label']}' on {item['url']}")
+        return
+    try:
+        state = await browser.approve(contact.wa_id, token)
+    except BrowserError as exc:
+        await say(db, contact, text_message(f"⚠️ {exc}"))
+        await remember(ctx, f"approved browser action '{item['label']}' could not be done: {exc}")
+        return
+    except Exception:
+        log.exception("approved browser action failed for %s", contact.wa_id)
+        await say(db, contact, text_message("😕 The website didn't respond as expected. Nothing else was clicked."))
+        return
+    summary = " ".join(state["text"].split())[:500]
+    try:
+        png = await browser.screenshot(contact.wa_id)
+        media_id = await get_client().upload_media(png, "image/png", "page.png")
+        await say(db, contact, image_message(media_id, f"✅ Done: {state['title']}"))
+    except Exception:
+        log.exception("result screenshot failed")
+    await say(db, contact, text_message(f"✅ Clicked \u201c{item['label']}\u201d. The site now shows: {summary}"))
+    await remember(ctx, f"user approved and I clicked '{item['label']}'. Resulting page '{state['title']}': {summary}")
 
 
 async def _booking_button(ctx: ToolContext, reply_id: str) -> None:

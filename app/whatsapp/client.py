@@ -188,6 +188,13 @@ def cta_url_message(body: str, display_text: str, url: str, footer: str | None =
     return {"type": "interactive", "interactive": interactive}
 
 
+def image_message(media_id: str, caption: str = "") -> dict[str, Any]:
+    image: dict[str, Any] = {"id": media_id}
+    if caption:
+        image["caption"] = caption[:1024]
+    return {"type": "image", "image": image}
+
+
 def audio_message(media_id: str) -> dict[str, Any]:
     """An uploaded OGG/Opus file shows in WhatsApp as a voice note."""
     return {"type": "audio", "audio": {"id": media_id}}
@@ -209,6 +216,8 @@ def describe(message: dict[str, Any]) -> str:
         return message["interactive"]["body"]["text"]
     if t == "template":
         return f"[template:{message['template']['name']}]"
+    if t == "image":
+        return "[image] " + message["image"].get("caption", "")
     if t == "audio":
         return message.get("_transcript") or "[voice reply]"
     return f"[{t}]"

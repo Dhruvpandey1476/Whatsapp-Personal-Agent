@@ -23,6 +23,7 @@ os.environ.update(
     STT_API_KEY="",
     TTS_API_KEY="",
     TTS_ENABLED="false",
+    BROWSER_ENABLED="false",
     LLM_MODEL="",
     LLM_BASE_URL="",
     MAX_ORDER_AMOUNT="25000",

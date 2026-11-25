@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api import admin, pay, webhook
+from app.demo_site import routes as demo_site
 from app.config import settings
 from app.db import init_db
 from app.services.messaging import get_client
@@ -23,6 +24,10 @@ async def lifespan(app: FastAPI):
         settings.public_url,
     )
     yield
+    if settings.browser_enabled:
+        from app.browser.manager import get_browser
+
+        await get_browser().close()
     await get_client().aclose()
 
 
@@ -35,6 +40,8 @@ app = FastAPI(
 app.include_router(webhook.router)
 app.include_router(pay.router)
 app.include_router(admin.router)
+if settings.demo_site_enabled:
+    app.include_router(demo_site.router)
 
 
 @app.get("/health", tags=["ops"])
