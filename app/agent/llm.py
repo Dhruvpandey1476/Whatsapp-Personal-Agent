@@ -138,31 +138,38 @@ class OpenAICompatibleLLM:
         self.http = http or httpx.AsyncClient(timeout=25, headers=headers)
         self._fallback: "OpenAICompatibleLLM | None" = None
 
-    def fallback(self) -> "tuple[OpenAICompatibleLLM, str] | None":
-        """Second chance when the main model is down: another provider (e.g. Groq -> Gemini) or another model."""
+    def fallback(self) -> "tuple[OpenAICompatibleLLM, list[str]] | None":
+        """Where to go when the main model fails: another provider (e.g. Groq -> Gemini) or other models.
+        LLM_FALLBACK_MODEL may list several models, tried in order ("gemini-3-flash-preview,gemini-flash-lite-latest")."""
+        models = [m.strip() for m in settings.llm_fallback_model.split(",") if m.strip()]
         fp = settings.llm_fallback_provider.lower()
         if fp and fp != self.provider:
             if self._fallback is None:
                 self._fallback = OpenAICompatibleLLM(
                     fp, api_key=settings.llm_fallback_api_key or settings.llm_api_key,
-                    model=settings.llm_fallback_model or None)  # fmt: skip
-            return self._fallback, self._fallback.model
-        if settings.llm_fallback_model and settings.llm_fallback_model != self.model:
-            return self, settings.llm_fallback_model
-        return None
+                    model=models[0] if models else None)  # fmt: skip
+            return self._fallback, models or [self._fallback.model]
+        models = [m for m in models if m != self.model]
+        return (self, models) if models else None
 
     async def create(self, *, system: str, tools: list[dict], messages: list[dict]) -> dict:
         try:
             return await self._create(self.model, system, tools, messages)
         except LLMError as exc:
-            # Fall back on anything except bad credentials: outages, rate limits, timeouts, and also 400s such as
-            # Groq's "tool_use_failed" (the model wrote a malformed tool call), which another model handles fine.
+            # Fall back on anything except bad credentials: outages, rate limits (incl. daily quotas), timeouts, and
+            # 400s such as Groq's "tool_use_failed" (a malformed tool call), which another model handles fine.
             fb = self.fallback()
             if fb is None or exc.status in (401, 403):
                 raise
-            client, model = fb
-            log.warning("%s unavailable (%s), falling back to %s:%s", self.model, exc, client.provider, model)
-            return await client._create(model, system, tools, messages)
+            client, models = fb
+            error: LLMError = exc
+            for model in models:
+                log.warning("%s failed (%s), falling back to %s:%s", self.model, str(error)[:160], client.provider, model)
+                try:
+                    return await client._create(model, system, tools, messages)
+                except LLMError as next_exc:
+                    error = next_exc
+            raise error
 
     async def _create(self, model: str, system: str, tools: list[dict], messages: list[dict]) -> dict:
         payload = {

@@ -39,7 +39,7 @@ services:
       - key: LLM_FALLBACK_API_KEY
         sync: false
       - key: LLM_FALLBACK_MODEL
-        value: gemini-flash-lite-latest
+        value: gemini-3-flash-preview,gemini-flash-lite-latest
       - key: TAVILY_API_KEY
         sync: false
       - key: MAX_ORDER_AMOUNT

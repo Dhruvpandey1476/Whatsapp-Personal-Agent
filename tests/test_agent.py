@@ -471,12 +471,17 @@ async def test_language_hint_is_next_to_newest_content_and_not_stored(client):
     llm = ScriptedLLM(tool("search_restaurants", query="pizza"), say("Here are pizza places"))
     set_llm(llm)
     await post_webhook(client, text_payload("show me pizza places nearby"))
-    first, second = llm.calls[0]["messages"][-1], llm.calls[1]["messages"][-1]
-    assert first["content"].endswith("[Reply language: English. Ignore the language of earlier replies.]")
-    assert second["content"][-1]["text"].startswith("[Reply language: English")  # after the tool result too
+    hint = "(Reply in English; ignore the language of earlier replies.)"
+    first = llm.calls[0]["messages"][-1]
+    assert first["content"] == "show me pizza places nearby\n\n" + hint
+    # second call: the hint stays on the user's message; nothing is appended after the tool results, which the
+    # model would read as a new user message (it answered "Got it! How can I help you today?")
+    second = llm.calls[1]["messages"]
+    assert second[-3]["content"].endswith(hint)
+    assert all(b["type"] == "tool_result" for b in second[-1]["content"])
     async with SessionLocal() as db:
         c = await db.scalar(select(Contact))
-    assert "Reply language" not in json.dumps(c.history)  # hint never saved
+    assert "Reply in English" not in json.dumps(c.history)  # hint never saved
 
 
 async def test_old_tool_results_are_shortened_in_history(client):
@@ -486,3 +491,20 @@ async def test_old_tool_results_are_shortened_in_history(client):
         c = await db.scalar(select(Contact))
     [result] = [b for m in c.history if isinstance(m["content"], list) for b in m["content"] if b.get("type") == "tool_result"]
     assert len(result["content"]) < 400 and result["content"].endswith("(older result, shortened)")
+
+
+async def test_empty_promise_is_sent_back_once(client):
+    """'Let me check, give me a second' with no tool call would leave the user waiting forever."""
+    llm = ScriptedLLM(say("Awesome! Let me check the best buses for you. Give me just a second."),
+                      tool("web_search", query="Delhi to Nainital bus"), say("Here are the best buses: ..."))  # fmt: skip
+    set_llm(llm)
+    await post_webhook(client, text_payload("yes"))
+    assert len(llm.calls) == 3 and "you said you'd do it" in llm.calls[1]["messages"][-1]["content"]
+    assert body(last_out()) == "Here are the best buses: ..."
+
+
+async def test_a_question_is_not_treated_as_an_empty_promise(client):
+    llm = ScriptedLLM(say("I'll book it once you confirm: which date do you want?"))
+    set_llm(llm)
+    await post_webhook(client, text_payload("book a bus"))
+    assert len(llm.calls) == 1

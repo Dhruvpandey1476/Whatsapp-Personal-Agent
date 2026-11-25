@@ -153,6 +153,10 @@ def _trim(history: list[dict], limit: int) -> list[dict]:
     return h
 
 
+# "I'll check / let me search / give me a second" said without actually calling a tool.
+EMPTY_PROMISE = re.compile(r"\b(let me|i'?ll|i will|i am going to|i'm going to|give me (just )?a (sec|second|moment)|"
+                           r"one (sec|second|moment)|hold on|bas ek second|abhi (check|dekh))\b", re.I)  # fmt: skip
+
 OLD_RESULT_CHARS = 300  # tool results from earlier turns are kept only as a short summary
 
 
@@ -175,16 +179,23 @@ def _compact(history: list[dict], keep_current: bool = True) -> list[dict]:
 
 
 def _with_language_hint(messages: list[dict], language: str) -> list[dict]:
-    """Repeat the reply language right next to the newest content on every call. An instruction at the top of the
-    system prompt loses to a history full of earlier replies in another language; one at the end doesn't."""
-    hint = f"[Reply language: {language}. Ignore the language of earlier replies.]"
-    last = messages[-1]
-    content = last["content"]
-    if isinstance(content, str):
-        new = content + "\n\n" + hint
-    else:
-        new = [*content, {"type": "text", "text": hint}]
-    return [*messages[:-1], {**last, "content": new}]
+    """Attach the reply language to the user's latest real message (a system-prompt instruction loses to a history
+    full of replies in another language). It must go on the user's own text, NOT after tool results: there it
+    reaches the model as a separate user message, and the model answers that instead ("Got it! How can I help?")."""
+    hint = f"(Reply in {language}; ignore the language of earlier replies.)"
+    for i in range(len(messages) - 1, -1, -1):
+        m = messages[i]
+        if m["role"] != "user":
+            continue
+        content = m["content"]
+        if isinstance(content, str):
+            new = f"{content}\n\n{hint}"
+        elif any(b.get("type") == "tool_result" for b in content):
+            continue  # tool results, not something the user said
+        else:
+            new = [*content, {"type": "text", "text": hint}]
+        return [*messages[:i], {**m, "content": new}, *messages[i + 1:]]
+    return messages
 
 
 def _merge_roles(history: list[dict]) -> list[dict]:
@@ -237,6 +248,7 @@ async def run_agent(ctx: ToolContext, user_text: str) -> str:
         except Exception:  # noqa: BLE001 - a hint, never a reason to fail the turn
             log.warning("could not read browser state for %s", ctx.contact.wa_id)
     tools = active_tools()[0]
+    nudged = False
     for _ in range(settings.agent_max_steps):
         # The hint is added only to what's sent, never stored in the conversation history.
         resp = await llm.create(system=system, tools=tools, messages=_with_language_hint(messages, language))
@@ -246,6 +258,12 @@ async def run_agent(ctx: ToolContext, user_text: str) -> str:
             reply = "\n\n".join(texts)
         calls = [b for b in resp["content"] if b["type"] == "tool_use"]
         if resp["stop_reason"] != "tool_use" or not calls:
+            if texts and not nudged and EMPTY_PROMISE.search(reply) and not reply.rstrip().endswith("?"):
+                # "Let me check… give me a second" with no tool call: the user would wait forever. Send it back once.
+                nudged = True
+                messages.append({"role": "user", "content": "[system note: you said you'd do it but didn't call any "
+                                 "tool. Do it now with the tools, or ask the user one clear question.]"})  # fmt: skip
+                continue
             break
         results = []
         for call in calls:
