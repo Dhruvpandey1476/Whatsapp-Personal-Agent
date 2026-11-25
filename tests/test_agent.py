@@ -1,5 +1,6 @@
 """End-to-end tests: signed webhook -> agent loop (scripted LLM) -> tools -> WhatsApp messages -> checkout."""
 
+import json
 from datetime import date, timedelta
 
 import pytest
@@ -324,7 +325,7 @@ async def test_voice_note_is_transcribed_echoed_and_sent_to_agent(client, monkey
     await post_webhook(client, payload)
 
     out = [body(x) for x in outbound()]
-    assert llm.calls[0]["messages"][-1]["content"] == "kal Delhi se Goa ki sasti flight"
+    assert llm.calls[0]["messages"][-1]["content"].startswith("kal Delhi se Goa ki sasti flight")
     assert out == ["Searching flights for you"]  # only the answer; the transcript is not echoed back
 
 
@@ -464,3 +465,24 @@ async def test_english_message_tells_model_to_answer_in_english(client):
     llm.turns.append(say("ok"))
     await post_webhook(client, text_payload("give me the cheapest flight from delhi to mumbai for today"))
     assert "latest message is in English" in llm.calls[-1]["system"]
+
+
+async def test_language_hint_is_next_to_newest_content_and_not_stored(client):
+    llm = ScriptedLLM(tool("search_restaurants", query="pizza"), say("Here are pizza places"))
+    set_llm(llm)
+    await post_webhook(client, text_payload("show me pizza places nearby"))
+    first, second = llm.calls[0]["messages"][-1], llm.calls[1]["messages"][-1]
+    assert first["content"].endswith("[Reply language: English. Ignore the language of earlier replies.]")
+    assert second["content"][-1]["text"].startswith("[Reply language: English")  # after the tool result too
+    async with SessionLocal() as db:
+        c = await db.scalar(select(Contact))
+    assert "Reply language" not in json.dumps(c.history)  # hint never saved
+
+
+async def test_old_tool_results_are_shortened_in_history(client):
+    set_llm(ScriptedLLM(tool("search_restaurants", query=""), say("Here you go")))
+    await post_webhook(client, text_payload("restaurants"))
+    async with SessionLocal() as db:
+        c = await db.scalar(select(Contact))
+    [result] = [b for m in c.history if isinstance(m["content"], list) for b in m["content"] if b.get("type") == "tool_result"]
+    assert len(result["content"]) < 400 and result["content"].endswith("(older result, shortened)")

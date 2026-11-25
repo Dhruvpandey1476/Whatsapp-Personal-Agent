@@ -132,6 +132,40 @@ def _trim(history: list[dict], limit: int) -> list[dict]:
     return h
 
 
+OLD_RESULT_CHARS = 300  # tool results from earlier turns are kept only as a short summary
+
+
+def _compact(history: list[dict], keep_current: bool = True) -> list[dict]:
+    """Shrink tool results from earlier turns (search results are big), keeping every request well under Groq's
+    free-tier input-tokens-per-minute limit. keep_current=True leaves the current turn's results intact (needed to
+    answer now); False shrinks all of them (for storage, since they're 'earlier' by the next message)."""
+    last_user = len(history) if not keep_current else max(
+        (i for i, m in enumerate(history) if m["role"] == "user" and isinstance(m["content"], str)),
+        default=len(history))  # fmt: skip
+    out = []
+    for i, m in enumerate(history):
+        if i < last_user and m["role"] == "user" and isinstance(m["content"], list):
+            m = {**m, "content": [
+                {**b, "content": b["content"][:OLD_RESULT_CHARS] + "…(older result, shortened)"}
+                if b.get("type") == "tool_result" and len(b.get("content", "")) > OLD_RESULT_CHARS else b
+                for b in m["content"]]}  # fmt: skip
+        out.append(m)
+    return out
+
+
+def _with_language_hint(messages: list[dict], language: str) -> list[dict]:
+    """Repeat the reply language right next to the newest content on every call. An instruction at the top of the
+    system prompt loses to a history full of earlier replies in another language; one at the end doesn't."""
+    hint = f"[Reply language: {language}. Ignore the language of earlier replies.]"
+    last = messages[-1]
+    content = last["content"]
+    if isinstance(content, str):
+        new = content + "\n\n" + hint
+    else:
+        new = [*content, {"type": "text", "text": hint}]
+    return [*messages[:-1], {**last, "content": new}]
+
+
 def _merge_roles(history: list[dict]) -> list[dict]:
     """Merge consecutive same-role turns (e.g. a system note followed by the user's message)."""
     out: list[dict] = []
@@ -166,13 +200,15 @@ async def run_agent(ctx: ToolContext, user_text: str) -> str:
     """Run one user turn to completion. Returns the text to send; interactive messages land in ctx.outbox."""
     llm = get_llm()
     history = _trim([*(ctx.contact.history or []), {"role": "user", "content": user_text}], settings.history_messages)
-    messages = _merge_roles(history)
+    messages = _merge_roles(_compact(history))
     reply = ""
 
     # Language is judged on what the user actually said (not on our appended voice-note instruction).
-    system = _system(ctx, user_text.split("\n\n[voice note")[0])
+    said = user_text.split("\n\n[voice note")[0]
+    system, language = _system(ctx, said), reply_language(said)
     for _ in range(settings.agent_max_steps):
-        resp = await llm.create(system=system, tools=TOOLS, messages=messages)
+        # The hint is added only to what's sent, never stored in the conversation history.
+        resp = await llm.create(system=system, tools=TOOLS, messages=_with_language_hint(messages, language))
         messages.append({"role": "assistant", "content": resp["content"]})
         texts = [b["text"] for b in resp["content"] if b["type"] == "text" and b["text"].strip()]
         if texts:
@@ -189,7 +225,7 @@ async def run_agent(ctx: ToolContext, user_text: str) -> str:
     else:
         reply = reply or "Sorry, that took too many steps. Could you rephrase or break it into smaller requests?"
 
-    ctx.contact.history = _trim(messages, settings.history_messages)
+    ctx.contact.history = _trim(_compact(messages, keep_current=False), settings.history_messages)
     await ctx.db.commit()
     return reply
 
