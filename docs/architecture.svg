@@ -26,7 +26,7 @@
 
   <!-- Title -->
   <text x="40" y="44" font-size="26" font-weight="800" fill="#0f172a">WhatsApp Personal AI Agent: system architecture</text>
-  <text x="40" y="70" class="s">Text or 🎙️ voice (voice in → voice out) · flights (domestic + international) · trains · food (online / cash on delivery) · live web search &amp; weather · general chat. The LLM can prepare, but never confirm or pay.</text>
+  <text x="40" y="70" class="s">Text or 🎙️ voice (voice in → voice out) · flights (domestic + international) · trains · food (online / cash on delivery) · live web search &amp; weather · browser agent with OTP login · chat. The LLM can prepare, but never confirm or pay.</text>
 
   <!-- ============ Column A/B: user + Meta ============ -->
   <rect x="40" y="140" width="180" height="110" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
@@ -69,11 +69,11 @@
   <text x="685" y="416" text-anchor="middle" class="t">Button handler</text>
   <text x="685" y="436" text-anchor="middle" class="s">plain code, NO LLM</text>
   <text x="685" y="456" text-anchor="middle" class="xs">✅ Confirm · 💵 Cash on delivery</text>
-  <text x="685" y="471" text-anchor="middle" class="xs">❌ Cancel</text>
+  <text x="685" y="471" text-anchor="middle" class="xs">❌ Cancel · 🌐 Approve browser click</text>
 
   <rect x="860" y="390" width="290" height="90" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.8"/>
   <text x="1005" y="416" text-anchor="middle" class="t">🧠 Agent loop</text>
-  <text x="1005" y="436" text-anchor="middle" class="s">LLM ⇄ tools until done (max 8 steps)</text>
+  <text x="1005" y="436" text-anchor="middle" class="s">LLM ⇄ tools until done (max 12 steps)</text>
   <text x="1005" y="454" text-anchor="middle" class="xs">system prompt · profile memory · history</text>
   <text x="1005" y="470" text-anchor="middle" class="xs">tool errors returned to LLM to recover</text>
 
@@ -85,16 +85,19 @@
   <rect x="860" y="560" width="290" height="60" rx="10" fill="#fef2f2" stroke="#dc2626" stroke-width="1.6"/>
   <text x="1005" y="583" text-anchor="middle" font-size="13.5" font-weight="700" fill="#991b1b">🛡️ Guardrails</text>
   <text x="1005" y="602" text-anchor="middle" class="xs">LLM never confirms/pays · stale-button guard</text>
-  <text x="1005" y="615" text-anchor="middle" class="xs">SSRF-safe page reader · signed webhooks</text>
+  <text x="1005" y="615" text-anchor="middle" class="xs">browser: allowlist · no passwords · SSRF-safe</text>
 
   <rect x="570" y="630" width="230" height="64" rx="10" fill="#ffedd5" stroke="#c2410c" stroke-width="1.8"/>
   <text x="685" y="654" text-anchor="middle" class="t">Checkout /pay/{token}</text>
   <text x="685" y="674" text-anchor="middle" class="xs">user pays → receipt + PNR on WhatsApp</text>
   <text x="685" y="688" text-anchor="middle" class="xs">(swap: Razorpay link + webhook)</text>
 
-  <rect x="860" y="636" width="290" height="58" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-width="1.4"/>
-  <text x="1005" y="660" text-anchor="middle" class="t">Admin API (X-API-Key)</text>
-  <text x="1005" y="680" text-anchor="middle" class="xs">/api/traces · /api/bookings · history</text>
+  <rect x="860" y="636" width="140" height="58" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-width="1.4"/>
+  <text x="930" y="660" text-anchor="middle" class="t">Admin API</text>
+  <text x="930" y="680" text-anchor="middle" class="xs">traces · bookings</text>
+  <rect x="1010" y="636" width="140" height="58" rx="10" fill="#ecfeff" stroke="#0e7490" stroke-width="1.6"/>
+  <text x="1080" y="660" text-anchor="middle" class="t">🌐 SkyTrip</text>
+  <text x="1080" y="680" text-anchor="middle" class="xs">demo site · OTP login</text>
 
   <!-- ============ Right column ============ -->
   <rect x="1240" y="100" width="320" height="115" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
@@ -104,33 +107,39 @@
   <text x="1400" y="188" text-anchor="middle" class="xs">cross-provider fallback on 429 / 5xx / timeout</text>
   <text x="1400" y="204" text-anchor="middle" class="xs">+ Whisper (voice in) · Gemini TTS + ffmpeg (voice out)</text>
 
-  <rect x="1240" y="240" width="320" height="290" rx="14" fill="#faf5ff" stroke="#7c3aed" stroke-width="2"/>
-  <text x="1400" y="264" text-anchor="middle" class="t">🔧 Tools (function calling)</text>
+  <rect x="1240" y="240" width="320" height="315" rx="14" fill="#faf5ff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="1400" y="262" text-anchor="middle" class="t">🔧 Tools (function calling)</text>
 
-  <rect x="1255" y="276" width="290" height="80" rx="9" fill="#ffffff" stroke="#c2410c" stroke-width="1.4"/>
-  <text x="1270" y="296" class="lbl">Action tools → provider interfaces</text>
-  <text x="1270" y="314" class="xs">search_flights · search_trains · search_restaurants</text>
-  <text x="1270" y="330" class="xs">get_menu · prepare_booking (draft) · cancel_booking</text>
-  <text x="1270" y="347" class="xs" font-style="italic">→ mock providers (demo inventory, swappable)</text>
+  <rect x="1255" y="274" width="290" height="66" rx="9" fill="#ffffff" stroke="#c2410c" stroke-width="1.4"/>
+  <text x="1270" y="291" class="lbl">Action tools → provider interfaces</text>
+  <text x="1270" y="306" class="xs">search_flights · search_trains · search_restaurants</text>
+  <text x="1270" y="320" class="xs">get_menu · prepare_booking (draft) · cancel_booking</text>
+  <text x="1270" y="334" class="xs" font-style="italic">→ mock providers (demo inventory, swappable)</text>
 
-  <rect x="1255" y="364" width="290" height="80" rx="9" fill="#ffffff" stroke="#0891b2" stroke-width="1.4"/>
-  <text x="1270" y="384" class="lbl">Live info tools (real data)</text>
-  <text x="1270" y="402" class="xs">web_search · read_webpage · get_weather</text>
-  <text x="1270" y="418" class="xs">Tavily → DuckDuckGo → Google News → Wikipedia</text>
-  <text x="1270" y="435" class="xs" font-style="italic">→ Open-Meteo (weather, any city)</text>
+  <rect x="1255" y="346" width="290" height="66" rx="9" fill="#ffffff" stroke="#0891b2" stroke-width="1.4"/>
+  <text x="1270" y="363" class="lbl">Live info tools (real data)</text>
+  <text x="1270" y="378" class="xs">web_search · read_webpage · get_weather</text>
+  <text x="1270" y="392" class="xs">Tavily → DuckDuckGo → Google News → Wikipedia</text>
+  <text x="1270" y="406" class="xs" font-style="italic">→ Open-Meteo (weather, any city)</text>
 
-  <rect x="1255" y="452" width="290" height="66" rx="9" fill="#ffffff" stroke="#64748b" stroke-width="1.4"/>
-  <text x="1270" y="472" class="lbl">Memory tools</text>
-  <text x="1270" y="490" class="xs">update_profile (name, age, address, prefs)</text>
-  <text x="1270" y="506" class="xs">get_my_bookings</text>
+  <rect x="1255" y="418" width="290" height="38" rx="9" fill="#ffffff" stroke="#64748b" stroke-width="1.4"/>
+  <text x="1270" y="434" class="lbl">Memory tools</text>
+  <text x="1270" y="449" class="xs">update_profile · get_my_bookings</text>
 
-  <rect x="1240" y="560" width="320" height="150" rx="14" fill="#f1f5f9" stroke="#64748b" stroke-width="2"/>
-  <text x="1400" y="586" text-anchor="middle" class="t">🗄️ Postgres on Render (SQLite locally)</text>
-  <text x="1262" y="612" class="s">contacts: profile (long-term memory),</text>
-  <text x="1262" y="630" class="s">  history (short-term memory)</text>
-  <text x="1262" y="650" class="s">messages: every in/out + delivery status</text>
+  <rect x="1255" y="462" width="290" height="86" rx="9" fill="#ecfeff" stroke="#0e7490" stroke-width="1.8"/>
+  <text x="1270" y="479" class="lbl">🌐 Browser tools (Playwright, real Chromium)</text>
+  <text x="1270" y="495" class="xs">browser_open · fill · click · read · screenshot</text>
+  <text x="1270" y="510" class="xs">OTP login: user forwards the code, no passwords</text>
+  <text x="1270" y="525" class="xs">Book/Pay clicks wait for the user's Approve tap</text>
+  <text x="1270" y="540" class="xs" font-style="italic">allowlisted sites only · login saved per user</text>
+
+  <rect x="1240" y="565" width="320" height="145" rx="14" fill="#f1f5f9" stroke="#64748b" stroke-width="2"/>
+  <text x="1400" y="589" text-anchor="middle" class="t">🗄️ Postgres on Render (SQLite locally)</text>
+  <text x="1262" y="614" class="s">contacts: profile (long-term memory),</text>
+  <text x="1262" y="632" class="s">  history (short-term memory)</text>
+  <text x="1262" y="651" class="s">messages: every in/out + delivery status</text>
   <text x="1262" y="670" class="s">bookings: draft / paid / COD, PNR</text>
-  <text x="1262" y="690" class="s">tool_traces: every tool call + latency</text>
+  <text x="1262" y="689" class="s">tool_traces: every tool call + latency</text>
 
   <!-- ============ Arrows ============ -->
   <!-- 1 user -> meta -->
@@ -198,7 +207,7 @@
   <text x="58" y="438" class="s">4  Dedupe + lock, then route by message type</text>
   <text x="58" y="460" class="s">5  Tap → code · voice → Whisper → text · text → agent</text>
   <text x="58" y="482" class="s">6  LLM (Groq, Gemini fallback) reasons, picks tools</text>
-  <text x="58" y="504" class="s">7  Tools search flights / web / weather / memory</text>
+  <text x="58" y="504" class="s">7  Tools: flights · web · weather · memory · browser</text>
   <text x="58" y="526" class="s">8  prepare_booking creates a DRAFT + Confirm buttons</text>
   <text x="58" y="548" class="s">9  Reply (voice note if user spoke) + lists, buttons</text>
   <text x="58" y="570" class="s">10 User taps Confirm, opens the link and pays (or COD)</text>
@@ -240,6 +249,6 @@
     <line x1="220" y1="0" x2="260" y2="0" class="ai"/><text x="268" y="4" class="xs">AI reasoning &amp; tool calls</text>
     <line x1="460" y1="0" x2="500" y2="0" class="money"/><text x="508" y="4" class="xs">money path (deterministic code + user action)</text>
     <line x1="800" y1="0" x2="840" y2="0" class="data"/><text x="848" y="4" class="xs">persistence</text>
-    <text x="1000" y="4" class="xs">Python 3.12 · FastAPI · SQLAlchemy 2 · Docker on Render · Postgres · 37 tests</text>
+    <text x="1000" y="4" class="xs">Python 3.12 · FastAPI · SQLAlchemy 2 · Docker on Render · Postgres · Playwright · 49 tests</text>
   </g>
 </svg>
