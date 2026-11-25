@@ -27,7 +27,8 @@ SENSITIVE = re.compile(r"\b(pay|book|place\s+order|buy|purchase|checkout|confirm
                        r"submit\s+order|transfer|delete\s+account|edit|publish|save\s+changes)\b", re.I)  # fmt: skip
 
 SNAPSHOT_JS = """
-() => {
+(find) => {
+  const F = (find || "").toLowerCase().trim();  // optional: text of a control the agent is looking for
   document.querySelectorAll('[data-agent-id]').forEach(e => e.removeAttribute('data-agent-id'));
   // Real controls, plus things that only *behave* clickable (many sites build links as <div>/<span> with a click
   // handler, e.g. Flipkart's "Use Email-ID"): ARIA roles, onclick, keyboard-focusable, or a pointer cursor.
@@ -45,28 +46,48 @@ SNAPSHOT_JS = """
     if (el.closest('a[href],button,[role=button],[role=link]')) continue;
     candidates.add(el);
   }
-  const els = [...candidates].sort((a, b) =>
+  const all = [...candidates].sort((a, b) =>
     a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);  // page order
-  const out = []; let n = 0;
-  for (const el of els) {
+  // Big pages have hundreds of controls; a plain "first N" cut drops the important ones (Flipkart's "Add to cart"
+  // comes after ~60 images and offer links). Priority: action buttons anywhere, then what's on screen, then the rest.
+  const KEY = /add to (cart|bag|basket)|buy|check ?out|place order|proceed|continue|log ?in|sign ?in|verify|otp|pay|book|search|submit|next/i;
+  const vh = window.innerHeight, visible = [];
+  for (const el of all) {
     const r = el.getBoundingClientRect(), st = getComputedStyle(el);
     if (el.type === 'hidden' || st.visibility === 'hidden' || st.display === 'none' || (!r.width && !r.height)) continue;
     if (el.getAttribute('tabindex') === '-1' && !el.matches('a[href],button,input,select,textarea')) continue;
-    n++; el.setAttribute('data-agent-id', String(n));
     let label = el.getAttribute('aria-label') || '';
     if (!label && el.labels && el.labels.length) label = el.labels[0].innerText;
     if (!label) label = el.innerText || el.value || el.placeholder || el.name || '';
-    const item = {id: n, tag: el.tagName.toLowerCase(), label: label.trim().replace(/\\s+/g, ' ').slice(0, 90)};
+    label = label.trim().replace(/\\s+/g, ' ').slice(0, 90);
+    const field = el.matches('input,select,textarea');
+    visible.push({el, label, key: field || (label.length < 40 && KEY.test(label)), onScreen: r.bottom > 0 && r.top < vh,
+                  hit: !!F && label.toLowerCase().includes(F)});
+  }
+  const MAX = 80;
+  const picked = [...new Set([...visible.filter(v => v.hit), ...visible.filter(v => v.key).slice(0, 35),
+                             ...visible.filter(v => v.onScreen), ...visible])]
+    .slice(0, MAX).sort((a, b) => all.indexOf(a.el) - all.indexOf(b.el));
+  const out = [];
+  picked.forEach((v, i) => {
+    const el = v.el, n = i + 1;
+    el.setAttribute('data-agent-id', String(n));
+    const item = {id: n, tag: el.tagName.toLowerCase(), label: v.label};
     if (el.tagName === 'INPUT') { item.type = el.type; item.value = el.type === 'password' ? '' : el.value; }
     if (el.tagName === 'TEXTAREA') item.value = el.value;
     if (el.placeholder) item.placeholder = el.placeholder;
     if (el.tagName === 'SELECT') item.options = [...el.options].slice(0, 12).map(o => o.value + '=' + o.text);
     out.push(item);
-    if (n >= 60) break;
+  });
+  // Page text without the site header, menus and footer (buttons often live outside <main>, so read the body).
+  let text = document.body ? document.body.innerText : '';
+  for (const x of document.querySelectorAll('header, nav, footer, [role=navigation], [role=banner], [role=contentinfo]')) {
+    const t = (x.innerText || '').trim();
+    if (t.length > 20) text = text.replace(t, '');
   }
-  const main = document.querySelector('main, [role=main]') || document.body;  // skip site menus and footers
-  const text = (main ? main.innerText : '').replace(/\\n{3,}/g, '\\n\\n').trim();
-  return {title: document.title, url: location.href, text: text.slice(0, 2500), elements: out};
+  text = text.replace(/\\n{3,}/g, '\\n\\n').trim();
+  return {title: document.title, url: location.href, text: text.slice(0, 3000), elements: out,
+          note: visible.length > MAX ? `showing ${MAX} of ${visible.length} controls (actions and on-screen first)` : undefined};
 }
 """
 
@@ -184,15 +205,16 @@ class BrowserManager:
         except Exception:  # noqa: BLE001 - pages that keep connections open never go idle
             pass
 
-    async def snapshot(self, wa_id: str) -> dict:
+    async def snapshot(self, wa_id: str, find: str = "") -> dict:
         page = await self._page(wa_id)
         if page.url not in ("about:blank", "") and not allowed(page.url):
             await page.goto("about:blank")
             raise BrowserError("The page left the allowed sites, so I stopped there.")
-        state = await page.evaluate(SNAPSHOT_JS)
+        state = await page.evaluate(SNAPSHOT_JS, find or "")
         self._elements[wa_id] = {e["id"]: e for e in state["elements"]}
         for e in state["elements"]:
-            if e["tag"] in ("button", "a", "input") and is_sensitive(e["label"]):
+            if e["tag"] not in ("select", "textarea") and e.get("type") not in ("text", "email", "tel", "search") \
+                    and is_sensitive(e["label"]):  # any clickable: sites use <div>s as buttons too
                 e["needs_user_approval"] = True
         return state
 

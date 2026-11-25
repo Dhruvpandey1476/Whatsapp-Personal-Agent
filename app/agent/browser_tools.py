@@ -46,8 +46,10 @@ BROWSER_TOOLS: list[dict] = [
     },
     {
         "name": "browser_read",
-        "description": "Re-read the current page (text and element ids) without doing anything.",
-        "input_schema": {"type": "object", "properties": {}},
+        "description": "Re-read the current page (text and element ids) without doing anything. Big pages list "
+        "at most 80 controls; pass `find` (e.g. 'Buy now', 'Add to cart', 'Use Email') to list every control whose "
+        "label contains that text, wherever it is on the page.",
+        "input_schema": {"type": "object", "properties": {"find": {"type": "string"}}},
     },
     {
         "name": "browser_screenshot",
@@ -88,8 +90,8 @@ async def browser_fill(ctx: ToolContext, fields: list[dict]) -> dict:
     return await _run(get_browser().fill(ctx.contact.wa_id, fields))
 
 
-async def browser_read(ctx: ToolContext) -> dict:
-    return await _run(get_browser().snapshot(ctx.contact.wa_id))
+async def browser_read(ctx: ToolContext, find: str = "") -> dict:
+    return await _run(get_browser().snapshot(ctx.contact.wa_id, find))
 
 
 async def browser_click(ctx: ToolContext, element_id: int) -> dict:
@@ -158,4 +160,7 @@ Browser (you have a real web browser via browser_* tools):
 - Summarise what you see for the user in a short message; don't paste page text.
 - If the user asked you to use a website (e.g. SkyTrip) and it fails, say what went wrong and retry or ask them;
   don't silently switch to the normal flight tools.
-- Never say "let me do X" and then stop: either do it now with a tool call, or ask the user."""
+- Never say "let me do X" and then stop: either do it now with a tool call, or ask the user.
+- If a button or field you need isn't in the element list, call browser_read with find="<its text>" before giving
+  up (big pages only list 80 controls). If it's still not there, say exactly what you couldn't find; never invent
+  reasons like "regional restrictions" or "login limitations"."""

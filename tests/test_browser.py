@@ -214,3 +214,27 @@ async def test_page_reader_finds_controls_that_are_not_links_or_buttons(tmp_path
         assert "Just text" not in labels and labels.count("Pick a seat") == 1  # no duplicate for the nested span
     finally:
         await browser.close()
+
+
+async def test_action_buttons_survive_on_pages_with_hundreds_of_controls(tmp_path, monkeypatch):
+    """Flipkart's 'Add to cart' came after ~60 images/links and was cut off by a plain first-N limit."""
+    pytest.importorskip("playwright")
+    monkeypatch.setattr(bm.settings, "browser_state_dir", str(tmp_path))
+    browser = bm.BrowserManager()
+    try:
+        page = await browser._page("u2")
+        links = "".join(f'<a href="#p{i}">Product {i}</a><br>' for i in range(150))
+        await page.set_content(f"""{links}<div id="cart">Add to cart</div><div id="buy">Buy now</div>
+          <footer><a href="#">About</a></footer>
+          <script>for (const id of ['cart','buy']) document.getElementById(id).onclick = () => {{}}</script>""")
+        state = await browser.snapshot("u2")
+        labels = {e["label"]: e for e in state["elements"]}
+        assert len(state["elements"]) <= 80 and "showing 80 of" in state["note"]
+        assert "Add to cart" in labels and "Buy now" in labels
+        assert labels["Buy now"].get("needs_user_approval") and not labels["Add to cart"].get("needs_user_approval")
+        ids = [e["id"] for e in state["elements"]]
+        assert ids == sorted(ids) == list(range(1, len(ids) + 1))  # numbered in page order
+        found = await browser.snapshot("u2", find="Product 149")  # a control the 80-cap would normally drop
+        assert any(e["label"] == "Product 149" for e in found["elements"])
+    finally:
+        await browser.close()
