@@ -156,3 +156,24 @@ async def test_groq_qwen_disables_reasoning_and_caps_tokens():
     llm = OpenAICompatibleLLM("groq", http=httpx.AsyncClient(transport=httpx.MockTransport(handler)), model="qwen/qwen3.8-27b")
     await llm.create(system="S", tools=TOOLS, messages=[{"role": "user", "content": "hi"}])
     assert seen["reasoning_effort"] == "none" and seen["max_tokens"] <= 1000
+
+
+async def test_groq_tool_use_failed_400_falls_back_but_bad_key_does_not(monkeypatch):
+    from app.agent import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.settings, "llm_fallback_provider", "gemini")
+    status = {"code": 400}
+
+    def handler(req):
+        if "groq" in str(req.url):
+            return httpx.Response(status["code"], json={"error": {"code": "tool_use_failed", "message": "Failed to call a function"}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "from gemini"}}]})
+
+    t = httpx.MockTransport(handler)
+    main = OpenAICompatibleLLM("groq", http=httpx.AsyncClient(transport=t))
+    main._fallback = OpenAICompatibleLLM("gemini", http=httpx.AsyncClient(transport=t), model="g")
+    out = await main.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])
+    assert out["content"][0]["text"] == "from gemini"
+    status["code"] = 401
+    with pytest.raises(LLMError, match="401"):
+        await main.create(system="S", tools=[], messages=[{"role": "user", "content": "hi"}])

@@ -214,6 +214,7 @@ async def _run_tool(ctx: ToolContext, name: str, args: dict) -> tuple[Any, bool]
         result, is_error = {"error": "Internal error in tool; apologise and try another way."}, True
     ctx.db.add(ToolTrace(contact_id=ctx.contact.id, tool=name, input=args, output=result, is_error=is_error,
                          ms=int((time.perf_counter() - started) * 1000)))  # fmt: skip
+    await ctx.db.commit()  # keep the trace even if a later step of this turn fails (that's when you need it most)
     return result, is_error
 
 

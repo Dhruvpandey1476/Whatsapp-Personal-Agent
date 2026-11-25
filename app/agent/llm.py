@@ -154,9 +154,11 @@ class OpenAICompatibleLLM:
     async def create(self, *, system: str, tools: list[dict], messages: list[dict]) -> dict:
         try:
             return await self._create(self.model, system, tools, messages)
-        except Unavailable as exc:
+        except LLMError as exc:
+            # Fall back on anything except bad credentials: outages, rate limits, timeouts, and also 400s such as
+            # Groq's "tool_use_failed" (the model wrote a malformed tool call), which another model handles fine.
             fb = self.fallback()
-            if fb is None:
+            if fb is None or exc.status in (401, 403):
                 raise
             client, model = fb
             log.warning("%s unavailable (%s), falling back to %s:%s", self.model, exc, client.provider, model)
