@@ -133,3 +133,26 @@ def test_reasoning_is_never_shown():
     out = from_openai_response({"choices": [{"message": {"content": "<think>user wants Goa</think>Here you go!"}}]})
     assert out["content"] == [{"type": "text", "text": "Here you go!"}]
     assert from_openai_response({"choices": [{"message": {"content": "<think>unfinished"}}]})["content"] == []
+
+
+def test_gemini_gets_placeholder_signature_for_tool_calls_from_another_model():
+    history = [{"role": "user", "content": "flights"},
+               {"role": "assistant", "content": [{"type": "tool_use", "id": "c1", "name": "search_flights", "input": {}}]},
+               {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "{}"}]}]  # fmt: skip
+    call = to_openai_messages("S", history, "gemini")[2]["tool_calls"][0]
+    assert call["extra_content"]["google"]["thought_signature"] == "skip_thought_signature_validator"
+    assert "extra_content" not in to_openai_messages("S", history, "groq")[2]["tool_calls"][0]
+    own = [{**history[1], "content": [{**history[1]["content"][0], "extra": {"google": {"thought_signature": "REAL"}}}]}]
+    assert to_openai_messages("S", own, "gemini")[1]["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "REAL"
+
+
+async def test_groq_qwen_disables_reasoning_and_caps_tokens():
+    seen = {}
+
+    def handler(req):
+        seen.update(json.loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    llm = OpenAICompatibleLLM("groq", http=httpx.AsyncClient(transport=httpx.MockTransport(handler)), model="qwen/qwen3.8-27b")
+    await llm.create(system="S", tools=TOOLS, messages=[{"role": "user", "content": "hi"}])
+    assert seen["reasoning_effort"] == "none" and seen["max_tokens"] <= 1000

@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     llm_fallback_model: str = ""  # used once when the main model is unavailable (429 / 5xx / timeout)
     llm_fallback_provider: str = ""  # optional: a DIFFERENT provider for the fallback (e.g. gemini)
     llm_fallback_api_key: str = ""  # key for the fallback provider (defaults to LLM_API_KEY)
+    llm_max_tokens: int = 700  # WhatsApp replies are short; Groq free tier caps output at 1000 tokens/minute
     llm_base_url: str = ""  # optional override of the provider's OpenAI-compatible endpoint
     llm_enabled: bool = True
     agent_max_steps: int = 8  # max tool-use iterations per user message

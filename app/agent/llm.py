@@ -59,7 +59,12 @@ def to_openai_tools(tools: list[dict]) -> list[dict]:
     ]  # fmt: skip
 
 
-def to_openai_messages(system: str, messages: list[dict]) -> list[dict]:
+# Gemini 3 rejects earlier tool calls without a thought signature. Calls made by ANOTHER model (e.g. Groq, before
+# a fallback) have none; Google documents this placeholder for conversations transferred from other models.
+GEMINI_PLACEHOLDER_SIGNATURE = {"google": {"thought_signature": "skip_thought_signature_validator"}}
+
+
+def to_openai_messages(system: str, messages: list[dict], provider: str = "") -> list[dict]:
     out: list[dict] = [{"role": "system", "content": system}]
     for m in messages:
         content = m["content"]
@@ -72,7 +77,8 @@ def to_openai_messages(system: str, messages: list[dict]) -> list[dict]:
                 {"id": b["id"], "type": "function",
                  "function": {"name": b["name"], "arguments": json.dumps(b.get("input") or {}, ensure_ascii=False)},
                  # Gemini 3 requires its thought signature to be echoed back with the tool call
-                 **({"extra_content": b["extra"]} if b.get("extra") else {})}
+                 **({"extra_content": b["extra"]} if b.get("extra")
+                    else {"extra_content": GEMINI_PLACEHOLDER_SIGNATURE} if provider == "gemini" else {})}
                 for b in content if b["type"] == "tool_use"
             ]  # fmt: skip
             msg: dict[str, Any] = {"role": "assistant", "content": text or None}
@@ -159,12 +165,14 @@ class OpenAICompatibleLLM:
     async def _create(self, model: str, system: str, tools: list[dict], messages: list[dict]) -> dict:
         payload = {
             "model": model,
-            "messages": to_openai_messages(system, messages),
+            "messages": to_openai_messages(system, messages, self.provider),
             "tools": to_openai_tools(tools),
             "tool_choice": "auto",
             "temperature": 0.3,
-            "max_tokens": 1024,
+            "max_tokens": settings.llm_max_tokens,
         }
+        if self.provider == "groq" and "qwen" in model:
+            payload["reasoning_effort"] = "none"  # no hidden thinking: faster, and far fewer tokens per minute
         for attempt in range(3):
             try:
                 resp = await self.http.post(f"{self.base_url}/chat/completions", json=payload)
