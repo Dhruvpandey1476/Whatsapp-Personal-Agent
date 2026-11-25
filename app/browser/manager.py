@@ -23,8 +23,15 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 
-SENSITIVE = re.compile(r"\b(pay|book|place\s+order|buy|purchase|checkout|confirm(\s+(booking|order|payment))?|"
-                       r"submit\s+order|transfer|delete\s+account|edit|publish|save\s+changes)\b", re.I)  # fmt: skip
+# Only the click that actually commits money or data needs the user's approval. Steps on the way there
+# ("Buy now" -> checkout, "Edit" address, "Continue", choosing "Pay with UPI") don't, or one order would ask 4 times.
+SENSITIVE = re.compile(
+    r"^\s*pay\b(?!\s+(later|with|using|via|by|on))"                       # "Pay", "Pay now", "Pay ₹1,234"
+    r"|\bplace\s+(your\s+)?order\b|\bsubmit\s+order\b|\bmake\s+payment\b|\bproceed\s+to\s+pay\b"
+    r"|\bconfirm\s*(and|&)\s*pay\b|\bbook\s+now\s+and\s+pay\b|\bpay\s+(now|securely)\b"
+    r"|\bconfirm\s+(booking|order|payment|purchase)\b|\bcomplete\s+(booking|purchase|order|payment)\b"
+    r"|\b(send|transfer)\s+money\b|\bdelete\s+(my\s+)?account\b|\bpublish\b|\bsave\s+changes\b|\bpost\s+review\b",
+    re.I)  # fmt: skip
 
 SNAPSHOT_JS = """
 (find) => {
@@ -130,7 +137,8 @@ def allowed(url: str) -> bool:
 
 
 def is_sensitive(label: str) -> bool:
-    return bool(SENSITIVE.search(label or ""))
+    label = " ".join((label or "").split())
+    return len(label) <= 60 and bool(SENSITIVE.search(label))  # long labels are product cards / links, not buttons
 
 
 class BrowserManager:

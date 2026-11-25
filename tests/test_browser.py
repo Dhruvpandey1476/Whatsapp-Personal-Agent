@@ -62,7 +62,10 @@ def test_final_actions_are_detected_and_hosts_restricted(monkeypatch):
     monkeypatch.setattr(bm.settings, "browser_allowed_hosts", "localhost,wikipedia.org")
     assert bm.allowed("https://en.wikipedia.org/wiki/Rajdhani_Express") and bm.allowed("https://hi.wikipedia.org/")
     assert not bm.allowed("https://wikipedia.org.evil.com/") and not bm.allowed("https://notwikipedia.org/")
-    assert bm.is_sensitive("Edit") and bm.is_sensitive("Publish changes")  # edits need approval
+    assert bm.is_sensitive("Publish changes") and bm.is_sensitive("PLACE ORDER") and bm.is_sensitive("Pay ₹1,299")
+    # steps on the way to a purchase don't ask (otherwise one order needs 4 approvals)
+    assert not any(bm.is_sensitive(x) for x in ("Edit", "Buy Now", "Add to cart", "Continue", "Pay with UPI",
+                                                 "Flipkart Pay Later", "Book flights", "Checkout", "Deliver here"))
     monkeypatch.setattr(bm, "_is_public_host",
                         lambda h: h not in ("192.168.1.1", "169.254.169.254", "internal.corp", "localhost", "127.0.0.1"))
     monkeypatch.setattr(bm.settings, "browser_allowed_hosts", "*")
@@ -231,7 +234,7 @@ async def test_action_buttons_survive_on_pages_with_hundreds_of_controls(tmp_pat
         labels = {e["label"]: e for e in state["elements"]}
         assert len(state["elements"]) <= 80 and "showing 80 of" in state["note"]
         assert "Add to cart" in labels and "Buy now" in labels
-        assert labels["Buy now"].get("needs_user_approval") and not labels["Add to cart"].get("needs_user_approval")
+        assert not labels["Buy now"].get("needs_user_approval")  # only opens checkout; "Place order" asks
         ids = [e["id"] for e in state["elements"]]
         assert ids == sorted(ids) == list(range(1, len(ids) + 1))  # numbered in page order
         found = await browser.snapshot("u2", find="Product 149")  # a control the 80-cap would normally drop
